@@ -1,0 +1,24 @@
+# Step-9 two-fishery live demo: fishery B -- a healthier destination fishery,
+# with more headroom (higher growth rate, larger stock, looser n_min) so it
+# can absorb migrants from fishery A and keep running.
+fishery_id: fishery_b
+alpha: 0.05
+r: 0.2
+k: 300.0
+initial_stock: 300.0
+consumption: 1.0
+initial_agent_ids:
+  - b1
+  - b2
+  - b3
+  - b4
+  - b5
+  - b6
+  - b7
+  - b8
+  - b9
+  - b10
+r_min: 0.0
+n_min: 10
+max_rounds: null
+altruism_ratio: 0.5  # Gupta et al. Table 2: half start altruistic, half selfish

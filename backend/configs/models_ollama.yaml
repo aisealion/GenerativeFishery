@@ -1,0 +1,68 @@
+# Model config for LLM_PROVIDER=ollama (a local Ollama server, OpenAI-
+# compatible at OLLAMA_BASE_URL, default http://localhost:11434/v1). Every
+# LLMCallType is listed explicitly -- see models_litellm.yaml for why that
+# matters here (no Claude-flavored fallback makes sense against this
+# provider).
+#
+# One local model (gpt-oss:20b) for everything -- no cost tiering needed
+# since local inference has no per-call API cost, though you may still want
+# to route high-volume calls to a smaller local model for latency.
+#
+# gpt-oss is a reasoning model: it spends tokens on chain-of-thought before
+# ever emitting the tool call, so max_tokens needs real headroom above what
+# the response schema itself requires -- too tight a budget here causes
+# `finish_reason='length'` with no tool call at all (see
+# OpenAICompatibleLLMClient's retry-with-feedback loop, which helps recover
+# from an occasional bad response but can't fix a budget that's always
+# too small).
+calls:
+  effort_decision:
+    model: gpt-oss:20b
+    max_tokens: 1024
+    temperature: 1.0
+  vote:
+    model: gpt-oss:20b
+    # 2048, not the usual 1024 -- candidates now include full operationalization
+    # text reproduced verbatim, on top of gpt-oss's own reasoning overhead.
+    max_tokens: 2048
+    temperature: 1.0
+  election_decision:
+    model: gpt-oss:20b
+    max_tokens: 1024
+    temperature: 1.0
+  importance_rating:
+    model: gpt-oss:20b
+    max_tokens: 512
+    temperature: 0.0
+  disclosure:
+    model: gpt-oss:20b
+    max_tokens: 1024
+    temperature: 1.0
+  proposal:
+    model: gpt-oss:20b
+    max_tokens: 1024
+    temperature: 1.0
+  operationalization_proposal:
+    model: gpt-oss:20b
+    max_tokens: 1024
+    temperature: 1.0
+  operationalization_classifier:
+    model: gpt-oss:20b
+    max_tokens: 2048
+    temperature: 0.0
+  operationalization_vote:
+    model: gpt-oss:20b
+    max_tokens: 1024
+    temperature: 1.0
+  monitor_review:
+    model: gpt-oss:20b
+    max_tokens: 512
+    temperature: 1.0
+  reflection:
+    model: gpt-oss:20b
+    max_tokens: 1024
+    temperature: 1.0
+  norm_compiler:
+    model: gpt-oss:20b
+    max_tokens: 1024
+    temperature: 0.0

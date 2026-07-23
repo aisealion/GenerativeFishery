@@ -1,0 +1,60 @@
+# Model config for LLM_PROVIDER=litellm (a self-hosted LiteLLM proxy,
+# OpenAI-compatible, routed at LITELLM_BASE_URL). Every LLMCallType is listed
+# explicitly -- unlike models.yaml (Anthropic), there is no Claude-flavored
+# Python-level fallback that would make sense here, so an omitted call type
+# would fail against this provider rather than silently degrade.
+#
+# Only one model (gpt-5.4, as configured on the proxy) is available for now,
+# so there's no Haiku/Sonnet-style cost tiering yet -- once more models are
+# known to be registered on the proxy, cheaper ones can be assigned to the
+# high-volume call types (effort/vote/election/importance-rating) the same
+# way models.yaml tiers Haiku vs Sonnet.
+calls:
+  effort_decision:
+    model: gpt-5.4
+    max_tokens: 256
+    temperature: 1.0
+  vote:
+    model: gpt-5.4
+    max_tokens: 1024  # candidates now include full operationalization text, reproduced verbatim
+    temperature: 1.0
+  election_decision:
+    model: gpt-5.4
+    max_tokens: 256
+    temperature: 1.0
+  importance_rating:
+    model: gpt-5.4
+    max_tokens: 64
+    temperature: 0.0
+  disclosure:
+    model: gpt-5.4
+    max_tokens: 256
+    temperature: 1.0
+  proposal:
+    model: gpt-5.4
+    max_tokens: 1024
+    temperature: 1.0
+  operationalization_proposal:
+    model: gpt-5.4
+    max_tokens: 1024
+    temperature: 1.0
+  operationalization_classifier:
+    model: gpt-5.4
+    max_tokens: 1024
+    temperature: 0.0
+  operationalization_vote:
+    model: gpt-5.4
+    max_tokens: 512
+    temperature: 1.0
+  monitor_review:
+    model: gpt-5.4
+    max_tokens: 512
+    temperature: 1.0
+  reflection:
+    model: gpt-5.4
+    max_tokens: 1024
+    temperature: 1.0
+  norm_compiler:
+    model: gpt-5.4
+    max_tokens: 1024
+    temperature: 0.0

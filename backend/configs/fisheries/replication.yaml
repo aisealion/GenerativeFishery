@@ -1,0 +1,30 @@
+# Faithful single-fishery replication of Gupta, Zhong, Yakura, Eisenmann &
+# Rahwan, "The Role of Social Learning and Collective Norm Formation in
+# Fostering Cooperation in LLM Multi-Agent Systems" (AAMAS 2026), Table 3
+# ("rich" environment: r=0.6). N/K/r/consumption-threshold-behavior all match
+# the paper; alpha (fishing efficiency) and consumption (c) are NOT disclosed
+# anywhere in the paper (no numeric value in Table 3, no linked code repo) --
+# they're placeholders here, so validation targets the paper's *qualitative*
+# findings (punishment sustains cooperation; beta x r interaction; collapse by
+# ~50 rounds) rather than exact survival-time numbers.
+fishery_id: replication
+alpha: 0.10        # UNDISCLOSED in paper -- placeholder
+r: 0.6             # paper Table 3 (rich environment)
+k: 300.0           # paper Table 3
+initial_stock: 300.0   # assumed R(0) = K; not stated explicitly in paper
+consumption: 1.0   # UNDISCLOSED in paper -- placeholder
+initial_agent_ids:
+  - agent_1
+  - agent_2
+  - agent_3
+  - agent_4
+  - agent_5
+  - agent_6
+  - agent_7
+  - agent_8
+  - agent_9
+  - agent_10
+r_min: 0.0
+n_min: 10
+max_rounds: 50     # paper: "most populations collapse by roughly 50 rounds"
+altruism_ratio: 0.5  # unused by this script's RuleBasedDecisionSource, kept for config completeness

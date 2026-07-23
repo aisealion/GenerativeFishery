@@ -1,0 +1,57 @@
+# Per-call-type model tiering. Any call type omitted here falls back to the
+# built-in default in genfishery.config.model_config._DEFAULTS.
+#
+# Tiering rationale: effort/vote/election/importance-rating calls happen once
+# per agent per round (high volume, low complexity) -> Haiku. Proposal,
+# monitor review, dispute resolution, reflection, and NormCompiler are
+# low-volume and higher-stakes (structured-output correctness, nuanced
+# synthesis) -> Sonnet.
+calls:
+  effort_decision:
+    model: claude-haiku-4-5-20251001
+    max_tokens: 256
+    temperature: 1.0
+  vote:
+    model: claude-haiku-4-5-20251001
+    max_tokens: 1024  # candidates now include full operationalization text, reproduced verbatim
+    temperature: 1.0
+  election_decision:
+    model: claude-haiku-4-5-20251001
+    max_tokens: 256
+    temperature: 1.0
+  importance_rating:
+    model: claude-haiku-4-5-20251001
+    max_tokens: 64
+    temperature: 0.0
+  disclosure:
+    model: claude-haiku-4-5-20251001
+    max_tokens: 256
+    temperature: 1.0
+  proposal:
+    model: claude-sonnet-5
+    max_tokens: 1024
+    temperature: 1.0
+  operationalization_proposal:
+    model: claude-sonnet-5
+    max_tokens: 1024
+    temperature: 1.0
+  operationalization_classifier:
+    model: claude-sonnet-5
+    max_tokens: 1024
+    temperature: 0.0
+  operationalization_vote:
+    model: claude-haiku-4-5-20251001
+    max_tokens: 512
+    temperature: 1.0
+  monitor_review:
+    model: claude-sonnet-5
+    max_tokens: 512
+    temperature: 1.0
+  reflection:
+    model: claude-sonnet-5
+    max_tokens: 1024
+    temperature: 1.0
+  norm_compiler:
+    model: claude-sonnet-5
+    max_tokens: 1024
+    temperature: 0.0

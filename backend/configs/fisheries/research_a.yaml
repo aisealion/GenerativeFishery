@@ -1,0 +1,23 @@
+# Looser multi-fishery research config: fishery collapses well before total
+# population loss (n_min < initial population) and above absolute stock zero
+# (r_min > 0), so migration can trigger while fishery B still has room to
+# receive survivors. Placeholder values pending step-2 calibration.
+fishery_id: research_a
+alpha: 0.08
+r: 0.30
+k: 150.0
+initial_stock: 150.0
+consumption: 1.0
+initial_agent_ids:
+  - agent_1
+  - agent_2
+  - agent_3
+  - agent_4
+  - agent_5
+  - agent_6
+  - agent_7
+  - agent_8
+r_min: 10.0
+n_min: 3
+max_rounds: null
+altruism_ratio: 0.5  # unused by this script's RuleBasedDecisionSource, kept for config completeness
