@@ -59,21 +59,31 @@ OLLAMA_MODEL_ID="${OLLAMA_MODEL_ID:-gpt-oss:20b}"
 # --- 0. Postgres, via apptainer (no Docker daemon on Aoraki). Ephemeral --
 #     data only lives for this one job, in $PGDATA_DIR below (home for now,
 #     move it to /mnt or /projects once you have access, same as
-#     OLLAMA_MODELS). UNVERIFIED: --fakeroot is what lets the official
-#     image's entrypoint do its normal first-run initdb/chown as it expects
-#     -- if your account doesn't have fakeroot configured, this step will
-#     fail with an apptainer error naming that specifically. Test this
-#     interactively first (see deploy/README.md) before trusting it here.
+#     OLLAMA_MODELS).
+#
+# CONFIRMED (interactively, on this account): `apptainer run --fakeroot`
+# fails outright here (not in /etc/subuid, and the container's own fakeroot
+# helper binary is broken/incompatible: "a shared library is likely missing
+# in the image") -- so instead of the official image's root-oriented
+# entrypoint (which needs that), we drive `initdb`/`postgres` directly via
+# `apptainer exec`. No root needed: Postgres refuses to run AS root, but
+# runs fine as a normal unprivileged user, which is exactly what we are here.
+# Also confirmed: the image's default postgresql.conf template already bakes
+# in `shared_preload_libraries = 'timescaledb'`, so CREATE EXTENSION
+# timescaledb (done later, by the alembic migration) works with no extra
+# config -- no need to touch postgresql.conf by hand.
 PG_SIF="${PG_SIF:-$HOME/timescaledb.sif}"
 if [ ! -f "$PG_SIF" ]; then
   apptainer pull "$PG_SIF" docker://timescale/timescaledb:2.17.1-pg16
 fi
 PGDATA_DIR="${PGDATA_DIR:-$HOME/genfishery_pgdata_$SLURM_JOB_ID}"
 mkdir -p "$PGDATA_DIR"
-apptainer run --fakeroot \
-  --env POSTGRES_USER=genfishery --env POSTGRES_PASSWORD=genfishery --env POSTGRES_DB=genfishery \
-  --bind "$PGDATA_DIR:/var/lib/postgresql/data" \
-  "$PG_SIF" > "postgres-${SLURM_JOB_ID}.log" 2>&1 &
+
+apptainer exec --bind "$PGDATA_DIR:/pgdata" "$PG_SIF" \
+  initdb -D /pgdata -U genfishery --auth-local=trust --auth-host=trust
+
+apptainer exec --bind "$PGDATA_DIR:/pgdata" "$PG_SIF" \
+  postgres -D /pgdata -h 127.0.0.1 -p 5432 -k /tmp > "postgres-${SLURM_JOB_ID}.log" 2>&1 &
 POSTGRES_PID=$!
 trap 'kill "$POSTGRES_PID" "${OLLAMA_PID:-}" "${OPENCODE_PID:-}" 2>/dev/null || true' EXIT
 
@@ -86,6 +96,11 @@ if ! (echo > /dev/tcp/127.0.0.1/5432) 2>/dev/null; then
   echo "Postgres never came up on port 5432 -- check postgres-${SLURM_JOB_ID}.log and abort." >&2
   exit 1
 fi
+
+# trust auth means the password in DATABASE_URL is never actually checked --
+# it just has to be present for asyncpg's URL parsing / SQLAlchemy's DSN format.
+apptainer exec --bind "$PGDATA_DIR:/pgdata" "$PG_SIF" \
+  createdb -h 127.0.0.1 -p 5432 -U genfishery genfishery
 export DATABASE_URL="postgresql+asyncpg://genfishery:genfishery@localhost:5432/genfishery"
 echo "Postgres is up"
 

@@ -51,28 +51,16 @@ No `/projects` (or `/mnt`) access yet, so this pulls into the default
 `$HOME/.ollama/models` for now — see "Home-quota-only mode" below before you
 do this.
 
-**Also test Postgres interactively before trusting the batch job with it**
-(this part of the script is unverified — see the note at the bottom):
-
-```bash
-# still inside the same srun --pty allocation as above
-apptainer pull "$HOME/timescaledb.sif" docker://timescale/timescaledb:2.17.1-pg16
-mkdir -p "$HOME/pg_test"
-apptainer run --fakeroot \
-  --env POSTGRES_USER=genfishery --env POSTGRES_PASSWORD=genfishery --env POSTGRES_DB=genfishery \
-  --bind "$HOME/pg_test:/var/lib/postgresql/data" \
-  "$HOME/timescaledb.sif" &
-sleep 10
-(echo > /dev/tcp/127.0.0.1/5432) && echo "Postgres is listening"
-```
-
-If `--fakeroot` isn't configured for your account, apptainer will say so
-explicitly (something like "fakeroot configuration not found") rather than
-failing silently — if you hit that, let me know and I'll rework this step
-(most likely: initializing Postgres directly with `initdb`/`pg_ctl` instead
-of going through the official image's root-oriented entrypoint, which
-doesn't need fakeroot at all since Postgres itself runs fine as a normal
-unprivileged user).
+Postgres runs the same way — confirmed working on this account without
+`--fakeroot` (which failed here: not in `/etc/subuid`, and the container's
+own fakeroot helper is broken/incompatible in this image). Instead
+`aoraki_run.slurm` drives `initdb`/`postgres` directly via `apptainer exec`,
+bypassing the official image's root-oriented entrypoint entirely — Postgres
+runs fine as a plain unprivileged user, and the image's own
+`postgresql.conf` template already bakes in
+`shared_preload_libraries = 'timescaledb'`, so `CREATE EXTENSION timescaledb`
+(done later by the alembic migration) just works, no manual config editing
+needed.
 
 ### Home-quota-only mode (no `/projects`/`/mnt` access yet)
 
@@ -175,14 +163,17 @@ rest of that SSH session.
 - **`--gres=gpu:1`** grabs any free GPU; swap in `aoraki_gpu_L40` /
   `aoraki_gpu_A100_80GB` / etc. as the `--partition` if you need a specific
   card's memory instead.
-- **Postgres is ephemeral and untested** — it runs via `apptainer run
-  --fakeroot` against the same `timescale/timescaledb:2.17.1-pg16` image
-  `docker-compose.yml` uses locally, with a fresh data directory
-  (`$HOME/genfishery_pgdata_<jobid>`) every job, since there's no persistent
-  `/mnt`/`/projects` storage yet. That means: (1) `--fakeroot` needs to
-  actually be configured for your account — test this interactively first
-  (see above) rather than discovering it mid-batch-job; (2) the event-log
-  data does *not* survive between job runs — each job starts from an empty
-  database and runs `alembic upgrade head` itself to create the schema; (3)
-  leftover `$HOME/genfishery_pgdata_<jobid>` directories from old jobs are
-  safe to delete once you've pulled anything you cared about out of them.
+- **Postgres is ephemeral** — it runs via `apptainer exec` driving
+  `initdb`/`postgres` directly (confirmed working this way; `--fakeroot`
+  does not work on this account), against the same
+  `timescale/timescaledb:2.17.1-pg16` image `docker-compose.yml` uses
+  locally, with a fresh data directory (`$HOME/genfishery_pgdata_<jobid>`)
+  every job, since there's no persistent `/mnt`/`/projects` storage yet.
+  That means: (1) the event-log data does *not* survive between job runs —
+  each job starts from an empty database and runs `alembic upgrade head`
+  itself to create the schema; (2) leftover
+  `$HOME/genfishery_pgdata_<jobid>` directories from old jobs are safe to
+  delete once you've pulled anything you cared about out of them; (3) once
+  `/mnt`/`/projects` access comes through, point `PGDATA_DIR` there instead,
+  for the same reason as `OLLAMA_MODELS` above, and to actually persist
+  event-log data across runs.
