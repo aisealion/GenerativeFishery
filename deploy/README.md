@@ -121,14 +121,21 @@ rest of that SSH session.
 ## Notes / things to verify on your first real run
 
 - **Ollama's port is dynamic** (the container picks an unused one per
-  instance) — the script parses the endpoint out of the container's own
-  startup banner rather than assuming a fixed port.
-- **Two different base URLs in the banner** — the banner prints both
-  `OLLAMA_BASE_URL` (Ollama's *native* API, no `/v1`) and `OPENAI_URL_BASE`
-  (the OpenAI-compatible one, with `/v1`). genfishery's own `OLLAMA_BASE_URL`
+  instance), **and the container's startup banner (with the
+  `OLLAMA_BASE_URL`/`OPENAI_URL_BASE`/etc. listing) only prints in
+  interactive mode** — in batch mode (a command as the argument, which is
+  what this script uses) it's skipped entirely; the env vars are still set
+  internally, just never printed. So the script's own command explicitly
+  echoes `$OPENAI_URL_BASE` itself (as `GENFISHERY_OPENAI_URL_BASE=...`)
+  after the model pull finishes, and that's what gets parsed out of
+  `ollama-<jobid>.log` — not banner text, which would never appear.
+- **`OPENAI_URL_BASE` vs `OLLAMA_BASE_URL`** — the container exposes both:
+  `OLLAMA_BASE_URL` is Ollama's *native* API (no `/v1`), `OPENAI_URL_BASE` is
+  the OpenAI-compatible one (with `/v1`). genfishery's own `OLLAMA_BASE_URL`
   env var — and opencode's `openai-compatible` provider — both need the
-  **`/v1` one**, so the script parses `OPENAI_URL_BASE` from the banner, not
-  the line that happens to share genfishery's variable name.
+  **`/v1` one**, which is why the script specifically echoes
+  `$OPENAI_URL_BASE`, not `$OLLAMA_BASE_URL`, despite the name collision with
+  genfishery's own variable.
 - **`OLLAMA_MODELS` should end up under `/mnt` or `/projects`** — those are
   the only non-home directories `ollama-env.sh` bind-mounts into the
   container (`apptainer run --bind /mnt --bind /projects ...`); anything

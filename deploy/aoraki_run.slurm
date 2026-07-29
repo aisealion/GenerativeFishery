@@ -58,28 +58,41 @@ OLLAMA_MODEL_ID="${OLLAMA_MODEL_ID:-gpt-oss:20b}"
 
 # --- 1. Ollama, backgrounded via the container's own documented batch mode:
 #     "the container starts the Ollama server ... runs your command ...
-#     exits" -- so `sleep infinity` as the command keeps the server alive for
-#     the rest of this job. The container picks an unused port per instance
-#     (isolation between concurrent instances on a shared login node), so it
-#     can't be hardcoded -- capture it from the container's own startup
-#     banner instead of guessing.
+#     exits" -- so `sleep infinity` after our own command keeps the server
+#     alive for the rest of this job. The container picks an unused port per
+#     instance (isolation between concurrent instances on a shared login
+#     node), so it can't be hardcoded.
+#
+# IMPORTANT: the container only prints its "## Ollama Container Shell
+# Environment ##" banner (with the OLLAMA_HOST/OLLAMA_BASE_URL/OPENAI_URL_BASE
+# listing) in INTERACTIVE mode. In batch mode -- a command as the argument,
+# which is what this is -- it never prints that banner at all, it just runs
+# the given command directly. The env vars are still set internally, though,
+# so our own command explicitly echoes the one we need in a format we
+# control, rather than trying to grep for banner text that batch mode never
+# produces.
 OLLAMA_LOG="ollama-${SLURM_JOB_ID}.log"
-"$OLLAMA_ENV_SH" "ollama pull ${OLLAMA_MODEL_ID} && sleep infinity" > "$OLLAMA_LOG" 2>&1 &
+"$OLLAMA_ENV_SH" "ollama pull ${OLLAMA_MODEL_ID} && echo GENFISHERY_OPENAI_URL_BASE=\$OPENAI_URL_BASE && sleep infinity" \
+  > "$OLLAMA_LOG" 2>&1 &
 OLLAMA_PID=$!
+# Registered as soon as we have a PID to clean up -- not after opencode
+# starts too -- so an early failure (e.g. the pull-wait timeout below) still
+# tears this down instead of leaving it for Slurm's own job-teardown to
+# catch. ${OPENCODE_PID:-} defaults to empty until that PID exists too.
+trap 'kill "$OLLAMA_PID" "${OPENCODE_PID:-}" 2>/dev/null || true' EXIT
 
-echo "Waiting for Ollama's startup banner in $OLLAMA_LOG ..."
-# genfishery's OLLAMA_BASE_URL must be the OpenAI-compatible endpoint -- the
-# banner calls that OPENAI_URL_BASE (with /v1). The banner's own
-# "OLLAMA_BASE_URL" line is Ollama's *native* API (no /v1) and is NOT what
-# genfishery (or opencode's openai-compatible provider) should be pointed at.
+echo "Waiting for the model pull to finish and Ollama to report its endpoint (see $OLLAMA_LOG) ..."
+# A cold pull of a large model can take a while -- 40 * 15s = 10 minutes.
+# Re-runs on the same node/account are fast (OLLAMA_MODELS already has the
+# blobs), so this only matters on a first pull.
 OLLAMA_BASE_URL=""
-for _ in $(seq 1 60); do
-  OLLAMA_BASE_URL=$(grep -m1 "OPENAI_URL_BASE" "$OLLAMA_LOG" 2>/dev/null | awk '{print $NF}' || true)
+for _ in $(seq 1 40); do
+  OLLAMA_BASE_URL=$(grep -m1 "GENFISHERY_OPENAI_URL_BASE=" "$OLLAMA_LOG" 2>/dev/null | cut -d= -f2- || true)
   [ -n "$OLLAMA_BASE_URL" ] && break
-  sleep 5
+  sleep 15
 done
 if [ -z "$OLLAMA_BASE_URL" ]; then
-  echo "Never saw an OPENAI_URL_BASE line in $OLLAMA_LOG -- check that file and abort." >&2
+  echo "Never saw GENFISHERY_OPENAI_URL_BASE in $OLLAMA_LOG -- check that file and abort." >&2
   exit 1
 fi
 export OLLAMA_BASE_URL
@@ -96,8 +109,6 @@ OPENCODE_PID=$!
 echo "Waiting for opencode serve ..."
 until curl -sf http://127.0.0.1:4096/doc >/dev/null 2>&1; do sleep 2; done
 echo "opencode serve is up"
-
-trap 'kill "$OLLAMA_PID" "$OPENCODE_PID" 2>/dev/null || true' EXIT
 
 # --- 3. The simulation itself. ---
 export LLM_PROVIDER=ollama
