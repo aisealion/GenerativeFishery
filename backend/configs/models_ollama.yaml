@@ -48,18 +48,6 @@ calls:
     # finish_reason='length' with no tool call at all if underfunded.
     max_tokens: 3072
     temperature: 1.0
-  operationalization_proposal:
-    model: gpt-oss:20b
-    max_tokens: 1024
-    temperature: 1.0
-  operationalization_classifier:
-    model: gpt-oss:20b
-    max_tokens: 2048
-    temperature: 0.0
-  operationalization_vote:
-    model: gpt-oss:20b
-    max_tokens: 1024
-    temperature: 1.0
   monitor_review:
     model: gpt-oss:20b
     max_tokens: 512

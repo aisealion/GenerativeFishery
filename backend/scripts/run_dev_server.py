@@ -1,7 +1,7 @@
 """Runs the FastAPI app locally with a scripted FakeLLMClient instead of real
-Claude calls -- for local frontend development / manual verification without
-an Anthropic API key. Real deployments run `uvicorn genfishery.api.app:app`
-directly, which uses AnthropicLLMClient.
+Claude calls -- for manual verification without an Anthropic API key. Real
+deployments run `uvicorn genfishery.api.app:app` directly, which uses
+AnthropicLLMClient.
 
 Usage: uv run python scripts/run_dev_server.py
 """

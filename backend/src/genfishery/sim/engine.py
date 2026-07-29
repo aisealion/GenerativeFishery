@@ -26,14 +26,6 @@ rather than reproducing this text). The winning proposal's operationalization
 detail is appended directly to the text
 `NormCompiler.compile` receives, so the compiled primitives reflect the
 community's practical detail, not just the policy's headline text.
-
-`run_operationalization_propose_phase`/`NormCompiler.
-classify_operationalization_suggestions`/`run_operationalization_vote_phase`/
-`build_augmented_policy_text` are a superseded, disabled-by-default alternate
-design (a separate per-aspect propose -> classify -> vote pipeline that used
-to run *after* the main vote) -- kept defined and unit-tested, but no longer
-called from `run_norm_adoption`. The bundled-in-one-proposal approach above
-replaced it.
 """
 
 import logging
@@ -55,7 +47,7 @@ from genfishery.models.norms import (
     PenalisePrimitive,
     RedistributePrimitive,
 )
-from genfishery.sim.decisions import OperationalizationCluster, OperationalizationSuggestion, PolicyProposal
+from genfishery.sim.decisions import PolicyProposal
 from genfishery.sim.events_sink import EventSink, RoundEventCollector
 from genfishery.sim.norm_compiler import NormCompiler
 from genfishery.sim.observations import render_event_as_observation
@@ -540,128 +532,6 @@ async def run_vote_phase(
     return winner
 
 
-async def run_operationalization_propose_phase(
-    state: FisheryState, decisions: GovernanceDecisionSource, events: EventSink, *, raw_text: str
-) -> list[OperationalizationSuggestion]:
-    """Each agent optionally proposes one aspect of how the just-won policy
-    should work in practice (build spec extension: proposing nothing is a
-    valid, common response, unlike the main ProposalDecision). Suggestion ids
-    are 1-indexed positions in this round's list -- the single identifier
-    scheme the classifier, the vote ballot, and the vote result all share.
-    """
-    suggestions: list[OperationalizationSuggestion] = []
-    for agent in state.alive_agents:
-        decision = await decisions.decide_operationalization_proposal(
-            agent.agent_id, state, raw_text=raw_text
-        )
-        if not decision.aspect or not decision.suggestion:
-            continue
-        suggestion = OperationalizationSuggestion(
-            suggestion_id=str(len(suggestions) + 1),
-            agent_id=agent.agent_id,
-            aspect_label=decision.aspect,
-            suggestion_text=decision.suggestion,
-        )
-        suggestions.append(suggestion)
-        await events.record(
-            Event.create(
-                fishery_id=state.config.fishery_id,
-                round=state.round,
-                phase="operationalization_propose",
-                type=EventType.OPERATIONALIZATION_PROPOSED,
-                actor_id=agent.agent_id,
-                payload={"aspect": suggestion.aspect_label, "suggestion": suggestion.suggestion_text},
-            )
-        )
-    return suggestions
-
-
-async def run_operationalization_vote_phase(
-    state: FisheryState,
-    decisions: GovernanceDecisionSource,
-    events: EventSink,
-    *,
-    raw_text: str,
-    suggestions: list[OperationalizationSuggestion],
-    clusters: list[OperationalizationCluster],
-) -> dict[str, OperationalizationSuggestion | None]:
-    """One vote per alive agent per cluster/aspect ("abstain" is always a
-    valid choice, per the ballot's own design). Returns cluster_id -> the
-    winning suggestion, or None for a cluster where every vote was abstain
-    (or tied at zero) -- ties among non-zero suggestions are broken by
-    suggestion order (stable), same convention as `run_vote_phase`.
-    """
-    suggestions_by_id = {s.suggestion_id: s for s in suggestions}
-    tallies: dict[str, dict[str, int]] = {c.cluster_id: dict.fromkeys(c.suggestion_ids, 0) for c in clusters}
-
-    for agent in state.alive_agents:
-        choices = await decisions.decide_operationalization_vote(
-            agent.agent_id, state, raw_text=raw_text, clusters=clusters, suggestions=suggestions
-        )
-        for cluster in clusters:
-            choice = choices.get(cluster.cluster_id, "abstain")
-            chosen_suggestion = suggestions_by_id.get(choice)
-            if chosen_suggestion is not None:
-                tallies[cluster.cluster_id][choice] += 1
-            await events.record(
-                Event.create(
-                    fishery_id=state.config.fishery_id,
-                    round=state.round,
-                    phase="operationalization_vote",
-                    type=EventType.OPERATIONALIZATION_VOTE_CAST,
-                    actor_id=agent.agent_id,
-                    payload={
-                        "aspect": cluster.canonical_aspect,
-                        "choice": "abstain" if chosen_suggestion is None else chosen_suggestion.suggestion_text,
-                    },
-                )
-            )
-
-    results: dict[str, OperationalizationSuggestion | None] = {}
-    result_payload: dict[str, dict] = {}
-    for cluster in clusters:
-        tally = tallies[cluster.cluster_id]
-        winning_id = max(tally, key=lambda sid: tally[sid]) if tally else None
-        winner = suggestions_by_id[winning_id] if winning_id is not None and tally[winning_id] > 0 else None
-        results[cluster.cluster_id] = winner
-        result_payload[cluster.cluster_id] = {
-            "aspect": cluster.canonical_aspect,
-            "winner": winner.suggestion_text if winner is not None else None,
-        }
-
-    await events.record(
-        Event.create(
-            fishery_id=state.config.fishery_id,
-            round=state.round,
-            phase="operationalization_vote",
-            type=EventType.OPERATIONALIZATION_RESULT,
-            payload={"results": result_payload},
-        )
-    )
-    return results
-
-
-def build_augmented_policy_text(
-    raw_text: str,
-    clusters: list[OperationalizationCluster],
-    results: dict[str, OperationalizationSuggestion | None],
-) -> str:
-    """Appends whatever operationalization detail actually won a vote to the
-    policy text before it's handed to `NormCompiler.compile` -- so the
-    compiled primitives reflect the community's practical detail, not just
-    the policy's headline text. Falls straight back to bare `raw_text` if
-    nothing won (nobody proposed anything, or every cluster abstained).
-    """
-    detail_lines = [
-        f"- {cluster.canonical_aspect}: {results[cluster.cluster_id].suggestion_text}"
-        for cluster in clusters
-        if results.get(cluster.cluster_id) is not None
-    ]
-    if not detail_lines:
-        return raw_text
-    return raw_text + "\n\nOperationalization details agreed by the community:\n" + "\n".join(detail_lines)
-
-
 def _merge_compiled_primitives(
     active_norms: list[NormPrimitive], new_primitives: list[NormPrimitive]
 ) -> list[NormPrimitive]:
@@ -822,14 +692,10 @@ async def run_norm_adoption(
 
     state.group_norm_text = winner.community_proposal
 
-    # Every proposal now bundles its own operationalization suggestion
+    # Every proposal bundles its own operationalization suggestion
     # (`ProposalDecision.operationalization`), carried through voting as part
     # of the winning `PolicyProposal` -- so the compiler gets both pieces
-    # straight from the winner, with no separate propose/classify/vote
-    # pipeline needed (`run_operationalization_propose_phase`/
-    # `classify_operationalization_suggestions`/`run_operationalization_vote_
-    # phase`/`build_augmented_policy_text` are kept defined above/in
-    # norm_compiler.py but deliberately not called here anymore).
+    # straight from the winner.
     compiled_text = f"{winner.community_proposal}\n\nHow to operationalize this: {winner.operationalization}"
 
     spec = await norm_compiler.compile(

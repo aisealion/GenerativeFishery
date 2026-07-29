@@ -22,18 +22,12 @@ from genfishery.memory.registry import MemoryBankRegistry
 from genfishery.sim.decisions import (
     EffortDecision,
     NominationDecision,
-    OperationalizationCluster,
-    OperationalizationProposalDecision,
-    OperationalizationSuggestion,
     PolicyProposal,
     ProposalDecision,
     build_effort_prompt,
     build_election_vote_prompt,
     build_election_vote_response_model,
     build_nomination_prompt,
-    build_operationalization_proposal_prompt,
-    build_operationalization_vote_prompt,
-    build_operationalization_vote_response_model,
     build_proposal_prompt,
     build_vote_prompt,
     build_vote_response_model,
@@ -56,20 +50,6 @@ class GovernanceDecisionSource(Protocol):
     async def decide_vote(
         self, agent_id: str, state: FisheryState, *, candidates: list[PolicyProposal]
     ) -> PolicyProposal: ...
-
-    async def decide_operationalization_proposal(
-        self, agent_id: str, state: FisheryState, *, raw_text: str
-    ) -> OperationalizationProposalDecision: ...
-
-    async def decide_operationalization_vote(
-        self,
-        agent_id: str,
-        state: FisheryState,
-        *,
-        raw_text: str,
-        clusters: list[OperationalizationCluster],
-        suggestions: list[OperationalizationSuggestion],
-    ) -> dict[str, str]: ...
 
     async def decide_nomination(self, agent_id: str, state: FisheryState, *, role_name: str) -> bool: ...
 
@@ -170,58 +150,6 @@ class LLMDecisionSource:
             response_model=vote_model,
         )
         return candidates[int(decision.chosen_id) - 1]
-
-    async def decide_operationalization_proposal(
-        self, agent_id: str, state: FisheryState, *, raw_text: str
-    ) -> OperationalizationProposalDecision:
-        memories = await self._memory_block(
-            agent_id, state, "How should the community's new policy actually be put into practice?"
-        )
-        system, prompt = build_operationalization_proposal_prompt(
-            state=state,
-            viewer_id=agent_id,
-            raw_text=raw_text,
-            agent_norm=state.agent_norms.get(agent_id, NO_NORM_YET),
-            group_norm=state.group_norm_text,
-            memories=memories,
-        )
-        return await self._llm.structured_call(
-            call_type=LLMCallType.OPERATIONALIZATION_PROPOSAL,
-            system=system,
-            prompt=prompt,
-            response_model=OperationalizationProposalDecision,
-        )
-
-    async def decide_operationalization_vote(
-        self,
-        agent_id: str,
-        state: FisheryState,
-        *,
-        raw_text: str,
-        clusters: list[OperationalizationCluster],
-        suggestions: list[OperationalizationSuggestion],
-    ) -> dict[str, str]:
-        memories = await self._memory_block(
-            agent_id, state, "Which suggestion for putting the new policy into practice should I vote for?"
-        )
-        system, prompt = build_operationalization_vote_prompt(
-            state=state,
-            viewer_id=agent_id,
-            raw_text=raw_text,
-            clusters=clusters,
-            suggestions=suggestions,
-            agent_norm=state.agent_norms.get(agent_id, NO_NORM_YET),
-            group_norm=state.group_norm_text,
-            memories=memories,
-        )
-        vote_model = build_operationalization_vote_response_model(clusters)
-        decision = await self._llm.structured_call(
-            call_type=LLMCallType.OPERATIONALIZATION_VOTE,
-            system=system,
-            prompt=prompt,
-            response_model=vote_model,
-        )
-        return decision.model_dump()
 
     async def decide_nomination(self, agent_id: str, state: FisheryState, *, role_name: str) -> bool:
         memories = await self._memory_block(

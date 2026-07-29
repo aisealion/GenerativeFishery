@@ -57,12 +57,12 @@ async def test_memory_write_phase_only_writes_visible_events():
 async def test_memory_write_phase_skips_unrenderable_events():
     state = FisheryState.initial(make_config())
     round_events = [
-        # An OPERATIONALIZATION_RESULT with no winners renders to None (see
-        # `sim.observations.render_event_as_observation`) -- a public event
-        # that's nonetheless unrenderable in this particular instance.
+        # A HARVEST_RESOLVED event that doesn't mention either viewer renders
+        # to None for both (see `sim.observations.render_event_as_observation`)
+        # -- a public event that's nonetheless unrenderable for these viewers.
         Event.create(
-            fishery_id="test", round=1, phase="operationalization_vote", type=EventType.OPERATIONALIZATION_RESULT,
-            payload={"results": {}},
+            fishery_id="test", round=1, phase="harvest", type=EventType.HARVEST_RESOLVED,
+            payload={"harvests": {"a3": 2.0}, "regrown_stock": 95.0},
         ),
         Event.create(
             fishery_id="test", round=1, phase="harvest", type=EventType.HARVEST_RESOLVED,

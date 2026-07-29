@@ -1,10 +1,10 @@
 """Append-only event log schema (build spec §8).
 
 Every phase resolution function's only side effect on shared state is to append
-rows to this log (plus mutate in-memory `fishery_state`). Prompt assembly and the
-frontend both read exclusively from here -- never from an agent's internal
-memory objects directly. Each event type carries a *fixed* visibility rule; it is
-not a free choice made at construction time.
+rows to this log (plus mutate in-memory `fishery_state`). Prompt assembly and
+any API clients both read exclusively from here -- never from an agent's
+internal memory objects directly. Each event type carries a *fixed* visibility
+rule; it is not a free choice made at construction time.
 """
 
 from collections.abc import Sequence
@@ -35,9 +35,6 @@ class EventType(StrEnum):
     PROPOSAL_MADE = "proposal_made"
     VOTE_CAST = "vote_cast"
     VOTE_RESULT = "vote_result"
-    OPERATIONALIZATION_PROPOSED = "operationalization_proposed"
-    OPERATIONALIZATION_VOTE_CAST = "operationalization_vote_cast"
-    OPERATIONALIZATION_RESULT = "operationalization_result"
     NORM_ADOPTED = "norm_adopted"
     NORM_COULD_NOT_COMPILE = "could_not_compile"
     ROLE_ELECTION_CALLED = "role_election_called"
@@ -64,9 +61,6 @@ VISIBILITY_BY_EVENT_TYPE: dict[EventType, Visibility] = {
     EventType.PROPOSAL_MADE: Visibility.PUBLIC,
     EventType.VOTE_CAST: Visibility.ACTOR_ONLY,
     EventType.VOTE_RESULT: Visibility.PUBLIC,
-    EventType.OPERATIONALIZATION_PROPOSED: Visibility.PUBLIC,
-    EventType.OPERATIONALIZATION_VOTE_CAST: Visibility.ACTOR_ONLY,
-    EventType.OPERATIONALIZATION_RESULT: Visibility.PUBLIC,
     EventType.NORM_ADOPTED: Visibility.PUBLIC,
     EventType.NORM_COULD_NOT_COMPILE: Visibility.PUBLIC,
     EventType.ROLE_ELECTION_CALLED: Visibility.PUBLIC,

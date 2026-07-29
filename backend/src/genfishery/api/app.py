@@ -19,7 +19,6 @@ from pathlib import Path
 import numpy as np
 import yaml
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -150,12 +149,6 @@ def create_app(
             await engine.dispose()
 
     app = FastAPI(title="GenFishery API", lifespan=lifespan)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
     app.include_router(router)
     return app
 

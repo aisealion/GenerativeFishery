@@ -33,7 +33,6 @@ from genfishery.models.norms import (
     PenalisePrimitive,
     RedistributePrimitive,
 )
-from genfishery.sim.decisions import OperationalizationCluster, OperationalizationSuggestion
 
 NORM_COMPILER_SYSTEM_PROMPT = """You extract structured institutional primitives from a villager community's
 voted natural-language policy. Only these primitive types exist right now:
@@ -192,72 +191,10 @@ class NormCompilerOutput(BaseModel):
     primitives: list[CompiledPrimitive] = Field(default_factory=list)
 
 
-OPERATIONALIZATION_CLASSIFIER_SYSTEM_PROMPT = """Below are this round's operationalization suggestions from villagers, each
-tagged with their own label for which aspect of the policy they're
-addressing. Group suggestions that are really about the same underlying
-aspect together, even if the villagers used different words for it. Do not
-merge suggestions that differ in substance just because the labels are
-similar -- group by what they're actually proposing, not just by label text.
-
-Every suggestion must end up in exactly one cluster. Give each cluster a
-short canonical_aspect name, in your own words, capturing what it's actually
-about, and list the numeric ids of every suggestion that belongs in it."""
-
-
-class ClassifiedCluster(BaseModel):
-    canonical_aspect: str
-    suggestion_ids: list[str] = Field(
-        description="The numeric ids (from the numbered list) of every suggestion in this cluster."
-    )
-
-
-class OperationalizationClassifierOutput(BaseModel):
-    clusters: list[ClassifiedCluster] = Field(default_factory=list)
-
-
 class NormCompiler:
     def __init__(self, llm: LLMClient) -> None:
         self._llm = llm
         self._cache: dict[str, NormSpec] = {}
-
-    async def classify_operationalization_suggestions(
-        self, suggestions: list[OperationalizationSuggestion]
-    ) -> list[OperationalizationCluster]:
-        """Groups this round's operationalization suggestions into aspect
-        clusters via one structured-output call, not compiled/cached (unlike
-        `compile`) since suggestions are round-specific and never repeat.
-        """
-        if not suggestions:
-            return []
-
-        numbered = "\n".join(
-            f'{s.suggestion_id}. ({s.agent_id}, aspect: "{s.aspect_label}") {s.suggestion_text}'
-            for s in suggestions
-        )
-        output = await self._llm.structured_call(
-            call_type=LLMCallType.OPERATIONALIZATION_CLASSIFIER,
-            system=OPERATIONALIZATION_CLASSIFIER_SYSTEM_PROMPT,
-            prompt=f"Suggestions:\n{numbered}\n\nReturn a list of clusters.",
-            response_model=OperationalizationClassifierOutput,
-        )
-
-        # A cluster's ids must reference this round's actual suggestions --
-        # the LLM has no visibility into anything else. Unknown ids are
-        # dropped rather than guessed at; a cluster left with no valid ids
-        # after that is dropped entirely.
-        valid_ids = {s.suggestion_id for s in suggestions}
-        clusters = []
-        for i, cluster in enumerate(output.clusters):
-            ids = [sid for sid in cluster.suggestion_ids if sid in valid_ids]
-            if ids:
-                clusters.append(
-                    OperationalizationCluster(
-                        cluster_id=f"aspect_{i}",
-                        canonical_aspect=cluster.canonical_aspect,
-                        suggestion_ids=ids,
-                    )
-                )
-        return clusters
 
     async def compile(self, raw_text: str, *, norm_id: str, adopted_round: int) -> NormSpec:
         cache_key = hashlib.sha256(raw_text.encode()).hexdigest()

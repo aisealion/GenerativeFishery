@@ -111,11 +111,3 @@ def test_migration_renders_first_person_for_departure_and_arrival():
     # same MIGRATION event type, depending on `direction`.
     assert "a1 migrated to another fishery" in render_event_as_observation(departure, "a2")
     assert "A new fisherman, a1, has arrived" in render_event_as_observation(arrival, "a2")
-
-
-def test_operationalization_result_with_no_winners_is_unrenderable():
-    event = Event.create(
-        fishery_id="f", round=1, phase="operationalization_vote", type=EventType.OPERATIONALIZATION_RESULT,
-        payload={"results": {}},
-    )
-    assert render_event_as_observation(event, "a1") is None

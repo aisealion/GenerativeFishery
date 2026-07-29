@@ -19,9 +19,6 @@ class LLMCallType(StrEnum):
     EFFORT_DECISION = "effort_decision"
     PROPOSAL = "proposal"
     VOTE = "vote"
-    OPERATIONALIZATION_PROPOSAL = "operationalization_proposal"
-    OPERATIONALIZATION_CLASSIFIER = "operationalization_classifier"
-    OPERATIONALIZATION_VOTE = "operationalization_vote"
     ELECTION_DECISION = "election_decision"
     MONITOR_REVIEW = "monitor_review"
     DISCLOSURE = "disclosure"
@@ -54,9 +51,6 @@ _DEFAULTS: dict[LLMCallType, ModelParams] = {
     # detailed/specific/actionable text -- needs more headroom than a single
     # short field would.
     LLMCallType.PROPOSAL: ModelParams(model=SONNET, max_tokens=2048, temperature=1.0),
-    LLMCallType.OPERATIONALIZATION_PROPOSAL: ModelParams(model=SONNET, max_tokens=1024, temperature=1.0),
-    LLMCallType.OPERATIONALIZATION_CLASSIFIER: ModelParams(model=SONNET, max_tokens=1024, temperature=0.0),
-    LLMCallType.OPERATIONALIZATION_VOTE: ModelParams(model=HAIKU, max_tokens=512, temperature=1.0),
     LLMCallType.MONITOR_REVIEW: ModelParams(model=SONNET, max_tokens=512, temperature=1.0),
     LLMCallType.REFLECTION: ModelParams(model=SONNET, max_tokens=1024, temperature=1.0),
     LLMCallType.NORM_COMPILER: ModelParams(model=SONNET, max_tokens=1024, temperature=0.0),

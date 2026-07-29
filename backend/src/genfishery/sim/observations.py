@@ -93,24 +93,6 @@ def render_event_as_observation(event: Event, viewer_id: str) -> str | None:
             f'(to operationalize: "{payload["operationalization"]}").'
         )
 
-    if event.type == EventType.OPERATIONALIZATION_PROPOSED:
-        who = "I" if event.actor_id == viewer_id else event.actor_id
-        return f'{who} suggested for "{payload["aspect"]}": "{payload["suggestion"]}"'
-
-    if event.type == EventType.OPERATIONALIZATION_VOTE_CAST:
-        return f'I voted "{payload["choice"]}" for the aspect "{payload["aspect"]}".'
-
-    if event.type == EventType.OPERATIONALIZATION_RESULT:
-        parts = []
-        for detail in payload.get("results", {}).values():
-            if detail.get("winner"):
-                parts.append(f'for "{detail["aspect"]}", the community chose: "{detail["winner"]}"')
-            else:
-                parts.append(f'for "{detail["aspect"]}", no suggestion was chosen')
-        if not parts:
-            return None
-        return "The community operationalized the new policy: " + "; ".join(parts) + "."
-
     if event.type == EventType.NORM_ADOPTED:
         return f'The community adopted a new policy: "{payload["raw_text"]}"'
 

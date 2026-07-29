@@ -51,13 +51,6 @@ this text, since asking a model to reproduce a long string byte-for-byte
 turned out to be fragile -- see `build_vote_response_model`), so voting for
 a candidate commits to its enforcement detail too, not just its headline
 text -- not a separately-clustered/voted add-on.
-
-`OperationalizationSuggestion`/`OperationalizationCluster` and the
-`build_operationalization_*` prompt builders below are a superseded,
-disabled-by-default alternate design (a separate per-aspect propose ->
-classify -> vote pipeline that ran *after* the main vote) -- kept defined
-and unit-tested, but `run_norm_adoption` no longer calls into them. The
-bundled-in-one-proposal approach above replaced it.
 """
 
 from dataclasses import dataclass
@@ -75,60 +68,14 @@ __all__ = [
     "PolicyProposal",
     "proposal_candidate_key",
     "NominationDecision",
-    "OperationalizationSuggestion",
-    "OperationalizationCluster",
-    "OperationalizationProposalDecision",
     "build_effort_prompt",
     "build_proposal_prompt",
     "build_vote_prompt",
     "build_vote_response_model",
-    "build_operationalization_proposal_prompt",
-    "build_operationalization_vote_prompt",
-    "build_operationalization_vote_response_model",
     "build_nomination_prompt",
     "build_election_vote_prompt",
     "build_election_vote_response_model",
 ]
-
-
-@dataclass
-class OperationalizationSuggestion:
-    """One agent's optional suggestion for how to put a just-adopted policy
-    into practice. `suggestion_id` is the 1-indexed position ("1", "2", ...)
-    in the round's suggestion list -- the same id the classifier, the
-    per-cluster vote ballot, and the vote-result payload all reference, so
-    there's exactly one identifier scheme end to end.
-    """
-
-    suggestion_id: str
-    agent_id: str
-    aspect_label: str
-    suggestion_text: str
-
-
-@dataclass
-class OperationalizationCluster:
-    """One aspect the classifier grouped suggestions under. `cluster_id` is a
-    generated, guaranteed-valid Python identifier ("aspect_0", "aspect_1",
-    ...) used as the per-cluster vote's dynamic response-model field name --
-    `canonical_aspect` (the classifier's own free-text label) is what's
-    actually shown to villagers.
-    """
-
-    cluster_id: str
-    canonical_aspect: str
-    suggestion_ids: list[str]
-
-
-class OperationalizationProposalDecision(BaseModel):
-    aspect: str | None = Field(
-        default=None,
-        description="Short label for the aspect of the policy you're addressing, or omit if you have nothing to propose.",
-    )
-    suggestion: str | None = Field(
-        default=None,
-        description="Your concrete proposal for how that aspect should work, or omit if you have nothing to propose.",
-    )
 
 
 class EffortDecision(BaseModel):
@@ -321,103 +268,6 @@ been proposed this round:
 Based on your personal strategy and the current state of the lake, vote for which
 proposed policy (and its operationalization) you think should become the new
 shared policy, by its ballot number."""
-    return system, prompt
-
-
-def build_operationalization_proposal_prompt(
-    *,
-    state: FisheryState,
-    viewer_id: str,
-    raw_text: str,
-    agent_norm: str = NO_NORM_YET,
-    group_norm: str = NO_NORM_YET,
-    memories: str = "",
-) -> tuple[str, str]:
-    system = "You are a villager who fishes from a shared lake together with others in your community."
-    prompt = f"""{_preamble(state, viewer_id, agent_norm, group_norm, memories)}
-
-The community just voted, and this policy was chosen as the most-voted
-option — it is now the fishery's shared policy, and you are helping decide
-how to actually put it into practice: "{raw_text}"
-
-Based on your personal strategy and the fishery's current situation, pick ONE
-specific aspect of how this should actually work in practice, and describe
-your suggestion for it. Some examples of aspects you might address (you don't
-have to use these exact words — describe it your own way): timing (when does
-this happen, and relative to what), a specific number or limit, what happens
-to someone who doesn't follow it, who this applies to, how often it gets
-revisited, or who is going to check that this is actually being followed.
-
-Respond with:
-- aspect: a short label, in your own words, for which part of the policy
-  you're addressing
-- suggestion: your concrete proposal for how that aspect should work
-
-If you don't think this policy needs anything beyond what was already said,
-you don't have to propose anything this round."""
-    return system, prompt
-
-
-def _operationalization_cluster_block(
-    clusters: list[OperationalizationCluster], suggestions: list[OperationalizationSuggestion]
-) -> str:
-    suggestions_by_id = {s.suggestion_id: s for s in suggestions}
-    lines = []
-    for cluster in clusters:
-        lines.append(f'Aspect: "{cluster.canonical_aspect}"')
-        for suggestion_id in cluster.suggestion_ids:
-            s = suggestions_by_id[suggestion_id]
-            lines.append(f'  - [{suggestion_id}] {s.agent_id}: "{s.suggestion_text}"')
-    return "\n".join(lines)
-
-
-def build_operationalization_vote_response_model(clusters: list[OperationalizationCluster]) -> type[BaseModel]:
-    """One field per cluster/aspect, each constrained to that cluster's own
-    suggestion ids plus "abstain" -- same enum-constrained-tool-schema
-    approach as `build_vote_response_model`, just one field per aspect
-    instead of a single top-level choice.
-    """
-    fields = {
-        cluster.cluster_id: (
-            Literal[(*cluster.suggestion_ids, "abstain")],
-            Field(description=f'Your choice for the aspect "{cluster.canonical_aspect}", or "abstain".'),
-        )
-        for cluster in clusters
-    }
-    return create_model("OperationalizationVoteDecision", **fields)
-
-
-def build_operationalization_vote_prompt(
-    *,
-    state: FisheryState,
-    viewer_id: str,
-    raw_text: str,
-    clusters: list[OperationalizationCluster],
-    suggestions: list[OperationalizationSuggestion],
-    agent_norm: str = NO_NORM_YET,
-    group_norm: str = NO_NORM_YET,
-    memories: str = "",
-) -> tuple[str, str]:
-    system = "You are a villager who fishes from a shared lake together with others in your community."
-    aspect_choice_block = "\n".join(
-        f'- "{cluster.canonical_aspect}": choose one of {[*cluster.suggestion_ids, "abstain"]}'
-        for cluster in clusters
-    )
-    prompt = f"""{_preamble(state, viewer_id, agent_norm, group_norm, memories)}
-
-The community voted, and this policy was chosen as the most-voted option;
-you are now helping decide how to operationalize it: "{raw_text}"
-
-Here's how villagers suggested putting it into practice, grouped by aspect:
-
-{_operationalization_cluster_block(clusters, suggestions)}
-
-Based on your personal strategy and the current state of the lake, for each
-aspect below, either vote for the suggestion you think is best, or choose
-"abstain" if you don't want to endorse any suggestion for that aspect —
-abstaining is a valid choice, not a mistake to avoid.
-
-{aspect_choice_block}"""
     return system, prompt
 
 
