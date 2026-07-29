@@ -1,9 +1,9 @@
 # Running on Aoraki (Otago HPC)
 
-One Slurm job runs three long-lived processes on the same GPU node for the
-whole run: Ollama (in Otago's own apptainer container), `opencode serve` (the
-fishery councillor), and the FastAPI backend. The script is
-[`aoraki_run.slurm`](aoraki_run.slurm).
+One Slurm job runs four long-lived processes on the same GPU node for the
+whole run: Postgres (via apptainer -- Aoraki has no Docker daemon), Ollama (in
+Otago's own apptainer container), `opencode serve` (the fishery councillor),
+and the FastAPI backend. The script is [`aoraki_run.slurm`](aoraki_run.slurm).
 
 ## One-time setup (per account, not per job)
 
@@ -50,6 +50,29 @@ ollama list
 No `/projects` (or `/mnt`) access yet, so this pulls into the default
 `$HOME/.ollama/models` for now — see "Home-quota-only mode" below before you
 do this.
+
+**Also test Postgres interactively before trusting the batch job with it**
+(this part of the script is unverified — see the note at the bottom):
+
+```bash
+# still inside the same srun --pty allocation as above
+apptainer pull "$HOME/timescaledb.sif" docker://timescale/timescaledb:2.17.1-pg16
+mkdir -p "$HOME/pg_test"
+apptainer run --fakeroot \
+  --env POSTGRES_USER=genfishery --env POSTGRES_PASSWORD=genfishery --env POSTGRES_DB=genfishery \
+  --bind "$HOME/pg_test:/var/lib/postgresql/data" \
+  "$HOME/timescaledb.sif" &
+sleep 10
+(echo > /dev/tcp/127.0.0.1/5432) && echo "Postgres is listening"
+```
+
+If `--fakeroot` isn't configured for your account, apptainer will say so
+explicitly (something like "fakeroot configuration not found") rather than
+failing silently — if you hit that, let me know and I'll rework this step
+(most likely: initializing Postgres directly with `initdb`/`pg_ctl` instead
+of going through the official image's root-oriented entrypoint, which
+doesn't need fakeroot at all since Postgres itself runs fine as a normal
+unprivileged user).
 
 ### Home-quota-only mode (no `/projects`/`/mnt` access yet)
 
@@ -98,8 +121,9 @@ sbatch --time=08:00:00 --export=OLLAMA_MODEL_ID=gpt-oss:20b deploy/aoraki_run.sl
 
 ```bash
 squeue --me                       # job state, and which node it landed on
-tail -f slurm-<jobid>.out         # backend/opencode/Ollama startup + errors
+tail -f slurm-<jobid>.out         # backend/opencode/Ollama/Postgres startup + errors
 tail -f ollama-<jobid>.log        # Ollama's own banner + pull progress
+tail -f postgres-<jobid>.log      # Postgres's own startup log
 ```
 
 `backend/logs/{fishery_id}.log` and `backend/logs/{fishery_id}_councillor.log`
@@ -151,3 +175,14 @@ rest of that SSH session.
 - **`--gres=gpu:1`** grabs any free GPU; swap in `aoraki_gpu_L40` /
   `aoraki_gpu_A100_80GB` / etc. as the `--partition` if you need a specific
   card's memory instead.
+- **Postgres is ephemeral and untested** — it runs via `apptainer run
+  --fakeroot` against the same `timescale/timescaledb:2.17.1-pg16` image
+  `docker-compose.yml` uses locally, with a fresh data directory
+  (`$HOME/genfishery_pgdata_<jobid>`) every job, since there's no persistent
+  `/mnt`/`/projects` storage yet. That means: (1) `--fakeroot` needs to
+  actually be configured for your account — test this interactively first
+  (see above) rather than discovering it mid-batch-job; (2) the event-log
+  data does *not* survive between job runs — each job starts from an empty
+  database and runs `alembic upgrade head` itself to create the schema; (3)
+  leftover `$HOME/genfishery_pgdata_<jobid>` directories from old jobs are
+  safe to delete once you've pulled anything you cared about out of them.

@@ -56,6 +56,39 @@ fi
 
 OLLAMA_MODEL_ID="${OLLAMA_MODEL_ID:-gpt-oss:20b}"
 
+# --- 0. Postgres, via apptainer (no Docker daemon on Aoraki). Ephemeral --
+#     data only lives for this one job, in $PGDATA_DIR below (home for now,
+#     move it to /mnt or /projects once you have access, same as
+#     OLLAMA_MODELS). UNVERIFIED: --fakeroot is what lets the official
+#     image's entrypoint do its normal first-run initdb/chown as it expects
+#     -- if your account doesn't have fakeroot configured, this step will
+#     fail with an apptainer error naming that specifically. Test this
+#     interactively first (see deploy/README.md) before trusting it here.
+PG_SIF="${PG_SIF:-$HOME/timescaledb.sif}"
+if [ ! -f "$PG_SIF" ]; then
+  apptainer pull "$PG_SIF" docker://timescale/timescaledb:2.17.1-pg16
+fi
+PGDATA_DIR="${PGDATA_DIR:-$HOME/genfishery_pgdata_$SLURM_JOB_ID}"
+mkdir -p "$PGDATA_DIR"
+apptainer run --fakeroot \
+  --env POSTGRES_USER=genfishery --env POSTGRES_PASSWORD=genfishery --env POSTGRES_DB=genfishery \
+  --bind "$PGDATA_DIR:/var/lib/postgresql/data" \
+  "$PG_SIF" > "postgres-${SLURM_JOB_ID}.log" 2>&1 &
+POSTGRES_PID=$!
+trap 'kill "$POSTGRES_PID" "${OLLAMA_PID:-}" "${OPENCODE_PID:-}" 2>/dev/null || true' EXIT
+
+echo "Waiting for Postgres ..."
+for _ in $(seq 1 30); do
+  (echo > /dev/tcp/127.0.0.1/5432) 2>/dev/null && break
+  sleep 2
+done
+if ! (echo > /dev/tcp/127.0.0.1/5432) 2>/dev/null; then
+  echo "Postgres never came up on port 5432 -- check postgres-${SLURM_JOB_ID}.log and abort." >&2
+  exit 1
+fi
+export DATABASE_URL="postgresql+asyncpg://genfishery:genfishery@localhost:5432/genfishery"
+echo "Postgres is up"
+
 # --- 1. Ollama, backgrounded via the container's own documented batch mode:
 #     "the container starts the Ollama server ... runs your command ...
 #     exits" -- so `sleep infinity` after our own command keeps the server
@@ -75,11 +108,10 @@ OLLAMA_LOG="ollama-${SLURM_JOB_ID}.log"
 "$OLLAMA_ENV_SH" "ollama pull ${OLLAMA_MODEL_ID} && echo GENFISHERY_OPENAI_URL_BASE=\$OPENAI_URL_BASE && sleep infinity" \
   > "$OLLAMA_LOG" 2>&1 &
 OLLAMA_PID=$!
-# Registered as soon as we have a PID to clean up -- not after opencode
-# starts too -- so an early failure (e.g. the pull-wait timeout below) still
-# tears this down instead of leaving it for Slurm's own job-teardown to
-# catch. ${OPENCODE_PID:-} defaults to empty until that PID exists too.
-trap 'kill "$OLLAMA_PID" "${OPENCODE_PID:-}" 2>/dev/null || true' EXIT
+# The trap registered after Postgres already covers this PID too (it uses
+# ${OLLAMA_PID:-}), so an early failure here (e.g. the pull-wait timeout
+# below) still tears down Postgres + Ollama instead of leaving them for
+# Slurm's own job-teardown to catch.
 
 echo "Waiting for the model pull to finish and Ollama to report its endpoint (see $OLLAMA_LOG) ..."
 # A cold pull of a large model can take a while -- 40 * 15s = 10 minutes.
@@ -117,4 +149,9 @@ export OPENCODE_PROVIDER_ID=ollama
 export OPENCODE_MODEL_ID="$OLLAMA_MODEL_ID"
 
 cd backend
+
+# PGDATA_DIR is fresh every job, so the schema doesn't exist yet either --
+# create it before the app tries to use it.
+uv run alembic upgrade head
+
 uv run uvicorn genfishery.api.app:app --host 0.0.0.0 --port 8000
