@@ -45,10 +45,12 @@ Every proposal now bundles two things in one structured call
 (`ProposalDecision.community_proposal` + `.operationalization`): what the
 policy should be, and how it should actually be operationalized/enforced.
 Voting and compiling both carry the pair through together as one
-`PolicyProposal` candidate (see `proposal_candidate_key` -- the exact string
-identity a vote must reproduce to choose a candidate, both fields folded
-into one, so voting for a candidate commits to its enforcement detail too,
-not just its headline text) -- not a separately-clustered/voted add-on.
+`PolicyProposal` candidate (see `proposal_candidate_key` -- the display text
+shown on the ballot; the vote itself picks a short 1-indexed ballot id, not
+this text, since asking a model to reproduce a long string byte-for-byte
+turned out to be fragile -- see `build_vote_response_model`), so voting for
+a candidate commits to its enforcement detail too, not just its headline
+text -- not a separately-clustered/voted add-on.
 
 `OperationalizationSuggestion`/`OperationalizationCluster` and the
 `build_operationalization_*` prompt builders below are a superseded,
@@ -278,19 +280,21 @@ who within the community is responsible for carrying them out."""
 
 
 def build_vote_response_model(candidates: list[PolicyProposal]) -> type[BaseModel]:
-    """Builds a per-round response schema constraining the vote to the exact
-    candidate identity strings on the ballot -- "Respond with only the exact
-    text of your chosen policy" (paper Fig 11), enforced by the tool schema
-    itself rather than by post-hoc free-text matching. Each candidate's key
-    (`proposal_candidate_key`) folds in both the policy text and its
-    proposed operationalization, so choosing a candidate commits to both.
+    """Builds a per-round response schema constraining the vote to a short
+    1-indexed ballot id rather than the candidate's full text. An earlier
+    version asked the model to reproduce a candidate's exact text
+    (`proposal_candidate_key`) verbatim -- that broke two ways in practice:
+    truncation on a tight token budget ("Unterminated string"), and, even
+    with headroom, near-but-not-byte-identical reproduction (smart quotes,
+    dashes, minor rewording) failing the `Literal` match. A short id has
+    nothing to get subtly wrong.
     """
-    keys = tuple(proposal_candidate_key(c) for c in candidates)
+    ids = tuple(str(i) for i in range(1, len(candidates) + 1))
     return create_model(
         "VoteDecision",
-        chosen_text=(
-            Literal[keys],
-            Field(description="Exact text of the policy (and its operationalization) you vote for."),
+        chosen_id=(
+            Literal[ids],
+            Field(description="The ballot number of the policy (and its operationalization) you vote for."),
         ),
     )
 
@@ -305,7 +309,9 @@ def build_vote_prompt(
     memories: str = "",
 ) -> tuple[str, str]:
     system = "You are a villager who fishes from a shared lake together with others in your community."
-    candidate_block = "\n".join(f'- "{proposal_candidate_key(c)}"' for c in candidates)
+    candidate_block = "\n".join(
+        f'{i}. "{proposal_candidate_key(c)}"' for i, c in enumerate(candidates, start=1)
+    )
     prompt = f"""{_preamble(state, viewer_id, agent_norm, group_norm, memories)}
 
 The following community policies (with their suggested operationalization) have
@@ -314,7 +320,7 @@ been proposed this round:
 
 Based on your personal strategy and the current state of the lake, vote for which
 proposed policy (and its operationalization) you think should become the new
-shared policy."""
+shared policy, by its ballot number."""
     return system, prompt
 
 

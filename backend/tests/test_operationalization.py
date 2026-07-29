@@ -19,12 +19,10 @@ from genfishery.sim.decisions import (
     OperationalizationCluster,
     OperationalizationProposalDecision,
     OperationalizationSuggestion,
-    PolicyProposal,
     ProposalDecision,
     build_operationalization_proposal_prompt,
     build_operationalization_vote_prompt,
     build_operationalization_vote_response_model,
-    proposal_candidate_key,
 )
 from genfishery.sim.engine import (
     build_augmented_policy_text,
@@ -261,14 +259,11 @@ async def test_run_norm_adoption_never_invokes_the_standalone_pipeline():
     """
     state = FisheryState.initial(make_config())
     winning_text = "Fish sustainably."
-    winning_proposal = PolicyProposal(community_proposal=winning_text, operationalization="Fish only at dawn.")
     script = {
         LLMCallType.PROPOSAL: ProposalDecision(
             personal_norm="ok", community_proposal=winning_text, operationalization="Fish only at dawn."
         ),
-        LLMCallType.VOTE: lambda response_model, system, prompt: response_model(
-            chosen_text=proposal_candidate_key(winning_proposal)
-        ),
+        LLMCallType.VOTE: lambda response_model, system, prompt: response_model(chosen_id="1"),
         LLMCallType.NORM_COMPILER: NormCompilerOutput(primitives=[]),
     }
     fake_llm = FakeLLMClient(script)

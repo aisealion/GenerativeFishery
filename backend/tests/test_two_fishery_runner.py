@@ -10,7 +10,7 @@ from genfishery.config.model_config import LLMCallType, ModelConfig
 from genfishery.llm.fake_client import FakeLLMClient
 from genfishery.memory.importance import ImportanceRating
 from genfishery.memory.registry import MemoryBankRegistry
-from genfishery.sim.decisions import EffortDecision, PolicyProposal, ProposalDecision, proposal_candidate_key
+from genfishery.sim.decisions import EffortDecision, ProposalDecision
 from genfishery.sim.events_sink import InMemoryEventSink
 from genfishery.sim.norm_compiler import NormCompilerOutput
 from tests.conftest import fake_embedder
@@ -57,11 +57,7 @@ def make_llm() -> FakeLLMClient:
             LLMCallType.PROPOSAL: ProposalDecision(
                 personal_norm="ok", community_proposal="Carry on.", operationalization="No change needed."
             ),
-            LLMCallType.VOTE: lambda response_model, system, prompt: response_model(
-                chosen_text=proposal_candidate_key(
-                    PolicyProposal(community_proposal="Carry on.", operationalization="No change needed.")
-                )
-            ),
+            LLMCallType.VOTE: lambda response_model, system, prompt: response_model(chosen_id="1"),
             LLMCallType.NORM_COMPILER: NormCompilerOutput(primitives=[]),
         }
     )

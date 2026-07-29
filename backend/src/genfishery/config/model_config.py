@@ -41,16 +41,19 @@ SONNET = "claude-sonnet-5"
 
 _DEFAULTS: dict[LLMCallType, ModelParams] = {
     LLMCallType.EFFORT_DECISION: ModelParams(model=HAIKU, max_tokens=256, temperature=1.0),
-    # Vote candidates are now full (policy + operationalization) text the
-    # model must reproduce verbatim (`sim.decisions.proposal_candidate_key`)
-    # -- much longer than a bare proposal, so this needs real headroom above
-    # the old 256, or a long candidate gets cut off mid-string and fails
-    # JSON parsing ("Unterminated string").
+    # The vote itself is just a short ballot-number id (`chosen_id`), but the
+    # prompt now shows candidates as full (policy + operationalization) text
+    # -- kept above the old 256 for models that "think" before emitting the
+    # tool call (see the Ollama config for why this matters more there).
     LLMCallType.VOTE: ModelParams(model=HAIKU, max_tokens=1024, temperature=1.0),
     LLMCallType.ELECTION_DECISION: ModelParams(model=HAIKU, max_tokens=256, temperature=1.0),
     LLMCallType.IMPORTANCE_RATING: ModelParams(model=HAIKU, max_tokens=64, temperature=0.0),
     LLMCallType.DISCLOSURE: ModelParams(model=HAIKU, max_tokens=256, temperature=1.0),
-    LLMCallType.PROPOSAL: ModelParams(model=SONNET, max_tokens=1024, temperature=1.0),
+    # Now has to fill personal_norm + community_proposal + operationalization
+    # in one call, and the operationalization prompt explicitly asks for
+    # detailed/specific/actionable text -- needs more headroom than a single
+    # short field would.
+    LLMCallType.PROPOSAL: ModelParams(model=SONNET, max_tokens=2048, temperature=1.0),
     LLMCallType.OPERATIONALIZATION_PROPOSAL: ModelParams(model=SONNET, max_tokens=1024, temperature=1.0),
     LLMCallType.OPERATIONALIZATION_CLASSIFIER: ModelParams(model=SONNET, max_tokens=1024, temperature=0.0),
     LLMCallType.OPERATIONALIZATION_VOTE: ModelParams(model=HAIKU, max_tokens=512, temperature=1.0),

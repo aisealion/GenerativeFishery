@@ -37,7 +37,6 @@ from genfishery.sim.decisions import (
     build_proposal_prompt,
     build_vote_prompt,
     build_vote_response_model,
-    proposal_candidate_key,
 )
 from genfishery.sim.state import NO_NORM_YET, FisheryState
 
@@ -170,7 +169,7 @@ class LLMDecisionSource:
             prompt=prompt,
             response_model=vote_model,
         )
-        return next(c for c in candidates if proposal_candidate_key(c) == decision.chosen_text)
+        return candidates[int(decision.chosen_id) - 1]
 
     async def decide_operationalization_proposal(
         self, agent_id: str, state: FisheryState, *, raw_text: str

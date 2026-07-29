@@ -3,7 +3,7 @@ from genfishery.config.model_config import LLMCallType, ModelConfig
 from genfishery.llm.fake_client import FakeLLMClient
 from genfishery.models.events import EventType
 from genfishery.models.norms import CapPrimitive, PeerObservability, PenalisePrimitive
-from genfishery.sim.decisions import PolicyProposal, ProposalDecision, proposal_candidate_key
+from genfishery.sim.decisions import PolicyProposal, ProposalDecision
 from genfishery.sim.engine import run_norm_adoption, run_propose_phase, run_vote_phase
 from genfishery.sim.events_sink import InMemoryEventSink
 from genfishery.sim.norm_compiler import NormCompiler
@@ -201,7 +201,6 @@ async def test_run_norm_adoption_updates_group_norm_and_active_norms_on_success(
 
     state = FisheryState.initial(make_config())
     winning_text = "No one should catch more than 20 units."
-    winning_proposal = PolicyProposal(community_proposal=winning_text, operationalization="Review weekly.")
     script = {
         LLMCallType.PROPOSAL: ProposalDecision(
             personal_norm="ok", community_proposal=winning_text, operationalization="Review weekly."
@@ -220,7 +219,7 @@ async def test_run_norm_adoption_updates_group_norm_and_active_norms_on_success(
         ),
     }
     script[LLMCallType.VOTE] = lambda response_model, system, prompt: response_model(
-        chosen_text=proposal_candidate_key(winning_proposal)
+        chosen_id="1"
     )
     fake_llm = FakeLLMClient(script)
     decisions = LLMDecisionSource(fake_llm, ModelConfig.default())
@@ -240,7 +239,6 @@ async def test_run_norm_adoption_could_not_compile_still_updates_group_norm_text
 
     state = FisheryState.initial(make_config())
     winning_text = "Be kind to your neighbors."
-    winning_proposal = PolicyProposal(community_proposal=winning_text, operationalization="Just be nice.")
     fake_llm = FakeLLMClient(
         {
             LLMCallType.PROPOSAL: ProposalDecision(
@@ -248,7 +246,7 @@ async def test_run_norm_adoption_could_not_compile_still_updates_group_norm_text
             ),
             LLMCallType.NORM_COMPILER: NormCompilerOutput(primitives=[]),
             LLMCallType.VOTE: lambda response_model, system, prompt: response_model(
-                chosen_text=proposal_candidate_key(winning_proposal)
+                chosen_id="1"
             ),
         }
     )
@@ -288,7 +286,6 @@ async def test_peer_observability_is_silent_until_a_norm_enables_it_then_activat
     assert "a1: effort=" not in prompt
 
     winning_text = "Let's make everyone's effort and earnings visible to the whole community."
-    winning_proposal = PolicyProposal(community_proposal=winning_text, operationalization="Publish a shared log.")
     script = {
         LLMCallType.EFFORT_DECISION: EffortDecision(effort=0.3),
         LLMCallType.PROPOSAL: ProposalDecision(
@@ -299,7 +296,7 @@ async def test_peer_observability_is_silent_until_a_norm_enables_it_then_activat
         ),
     }
     script[LLMCallType.VOTE] = lambda response_model, system, prompt: response_model(
-        chosen_text=proposal_candidate_key(winning_proposal)
+        chosen_id="1"
     )
     fake_llm = FakeLLMClient(script)
     decisions = LLMDecisionSource(fake_llm, ModelConfig.default())

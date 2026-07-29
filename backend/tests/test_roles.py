@@ -3,7 +3,7 @@ from genfishery.config.model_config import LLMCallType, ModelConfig
 from genfishery.llm.fake_client import FakeLLMClient
 from genfishery.models.events import EventType
 from genfishery.models.norms import AssignRolePrimitive
-from genfishery.sim.decisions import NominationDecision, PolicyProposal, ProposalDecision, proposal_candidate_key
+from genfishery.sim.decisions import NominationDecision, ProposalDecision
 from genfishery.sim.engine import (
     _resolve_assign_role,
     run_election_phase,
@@ -187,15 +187,12 @@ async def test_norm_adoption_compiles_and_resolves_an_elected_assign_role():
 
     state = FisheryState.initial(make_config())
     winning_text = "The community should elect a monitor to oversee catches."
-    winning_proposal = PolicyProposal(community_proposal=winning_text, operationalization="Hold monthly reviews.")
     fake_llm = FakeLLMClient(
         {
             LLMCallType.PROPOSAL: ProposalDecision(
                 personal_norm="ok", community_proposal=winning_text, operationalization="Hold monthly reviews."
             ),
-            LLMCallType.VOTE: lambda response_model, system, prompt: response_model(
-                chosen_text=proposal_candidate_key(winning_proposal)
-            ),
+            LLMCallType.VOTE: lambda response_model, system, prompt: response_model(chosen_id="1"),
             LLMCallType.NORM_COMPILER: NormCompilerOutput.model_validate(
                 {
                     "primitives": [

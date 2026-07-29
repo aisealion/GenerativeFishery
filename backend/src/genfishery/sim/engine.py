@@ -20,9 +20,10 @@ Every proposal now bundles both what the policy should be AND how to
 operationalize/enforce it in one structured call
 (`ProposalDecision.community_proposal` + `.operationalization`), carried
 through voting and into the compiler together as one `PolicyProposal`
-candidate (`sim.decisions.proposal_candidate_key` is the exact string a vote
-must reproduce to choose one, both fields folded into it). The winning
-proposal's operationalization detail is appended directly to the text
+candidate (`sim.decisions.proposal_candidate_key` is its display text on the
+ballot, both fields folded into it; the vote itself picks a short ballot id
+rather than reproducing this text). The winning proposal's operationalization
+detail is appended directly to the text
 `NormCompiler.compile` receives, so the compiled primitives reflect the
 community's practical detail, not just the policy's headline text.
 

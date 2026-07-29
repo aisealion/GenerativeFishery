@@ -16,7 +16,7 @@ calls:
     temperature: 1.0
   vote:
     model: gpt-5.4
-    max_tokens: 1024  # candidates now include full operationalization text, reproduced verbatim
+    max_tokens: 1024  # vote itself is a short ballot id; headroom is for the candidate list in the prompt
     temperature: 1.0
   election_decision:
     model: gpt-5.4
@@ -32,7 +32,7 @@ calls:
     temperature: 1.0
   proposal:
     model: gpt-5.4
-    max_tokens: 1024
+    max_tokens: 2048  # fills 3 fields now (personal_norm, community_proposal, operationalization)
     temperature: 1.0
   operationalization_proposal:
     model: gpt-5.4

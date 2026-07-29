@@ -4,8 +4,8 @@
 fishery_id: fishery_a
 alpha: 0.05
 r: 0.20
-k: 300.0
-initial_stock: 300.0
+k: 150.0
+initial_stock: 150.0
 consumption: 1.0
 initial_agent_ids:
   - a1
@@ -14,11 +14,7 @@ initial_agent_ids:
   - a4
   - a5
   - a6
-  - a7
-  - a8
-  - a9
-  - a10
 r_min: 2.0
-n_min: 10
+n_min: 6
 max_rounds: null
 altruism_ratio: 0.5  # Gupta et al. Table 2: half start altruistic, half selfish

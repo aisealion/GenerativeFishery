@@ -17,7 +17,7 @@ from genfishery.config.fishery_config import FisheryConfig
 from genfishery.config.model_config import LLMCallType
 from genfishery.llm.fake_client import FakeLLMClient
 from genfishery.memory.importance import ImportanceRating
-from genfishery.sim.decisions import PolicyProposal, ProposalDecision, proposal_candidate_key
+from genfishery.sim.decisions import ProposalDecision
 from genfishery.sim.norm_compiler import NormCompilerOutput
 from tests.conftest import fake_embedder
 
@@ -51,13 +51,7 @@ def make_test_llm() -> FakeLLMClient:
                 community_proposal="Keep fishing moderately.",
                 operationalization="Check in weekly.",
             ),
-            LLMCallType.VOTE: lambda response_model, system, prompt: response_model(
-                chosen_text=proposal_candidate_key(
-                    PolicyProposal(
-                        community_proposal="Keep fishing moderately.", operationalization="Check in weekly."
-                    )
-                )
-            ),
+            LLMCallType.VOTE: lambda response_model, system, prompt: response_model(chosen_id="1"),
             LLMCallType.NORM_COMPILER: NormCompilerOutput(primitives=[]),
         }
     )
