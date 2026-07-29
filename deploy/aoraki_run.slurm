@@ -55,6 +55,15 @@ if [ -n "${OLLAMA_MODELS:-}" ]; then
 fi
 
 OLLAMA_MODEL_ID="${OLLAMA_MODEL_ID:-gpt-oss:20b}"
+# Ollama defaults every model to a 4096-token context window unless a custom
+# variant overrides it -- far too small for gpt-oss's reasoning to fit input
+# + chain-of-thought + a final answer, and it fails silently (a response
+# with only reasoning content, no actual answer, rather than a clear error).
+# This affects genfishery's own Ollama calls too, not just the councillor's
+# -- so both are pointed at this long-context variant (see models_ollama.yaml
+# and opencode.json), built fresh each job from whatever OLLAMA_MODEL_ID was
+# just pulled.
+OLLAMA_CTX_MODEL_ID="${OLLAMA_CTX_MODEL_ID:-gpt-oss-20b-32k}"
 
 # --- 0. Postgres, via apptainer (no Docker daemon on Aoraki). Ephemeral --
 #     data only lives for this one job, in $PGDATA_DIR below (home for now,
@@ -120,7 +129,7 @@ echo "Postgres is up"
 # control, rather than trying to grep for banner text that batch mode never
 # produces.
 OLLAMA_LOG="ollama-${SLURM_JOB_ID}.log"
-"$OLLAMA_ENV_SH" "ollama pull ${OLLAMA_MODEL_ID} && echo GENFISHERY_OPENAI_URL_BASE=\$OPENAI_URL_BASE && sleep infinity" \
+"$OLLAMA_ENV_SH" "ollama pull ${OLLAMA_MODEL_ID} && printf 'FROM %s\nPARAMETER num_ctx 32768\n' '${OLLAMA_MODEL_ID}' > /tmp/genfishery.Modelfile && ollama create ${OLLAMA_CTX_MODEL_ID} -f /tmp/genfishery.Modelfile && echo GENFISHERY_OPENAI_URL_BASE=\$OPENAI_URL_BASE && sleep infinity" \
   > "$OLLAMA_LOG" 2>&1 &
 OLLAMA_PID=$!
 # The trap registered after Postgres already covers this PID too (it uses
@@ -161,7 +170,10 @@ echo "opencode serve is up"
 export LLM_PROVIDER=ollama
 export OPENCODE_SERVER_URL=http://127.0.0.1:4096
 export OPENCODE_PROVIDER_ID=ollama
-export OPENCODE_MODEL_ID="$OLLAMA_MODEL_ID"
+# The long-context variant, not the raw pulled model -- see the num_ctx note
+# above. models_ollama.yaml is hardcoded to this same name for genfishery's
+# own calls, so both consumers share one model.
+export OPENCODE_MODEL_ID="$OLLAMA_CTX_MODEL_ID"
 
 cd backend
 

@@ -4,9 +4,20 @@
 # matters here (no Claude-flavored fallback makes sense against this
 # provider).
 #
-# One local model (gpt-oss:20b) for everything -- no cost tiering needed
+# One local model (gpt-oss-20b-32k) for everything -- no cost tiering needed
 # since local inference has no per-call API cost, though you may still want
 # to route high-volume calls to a smaller local model for latency.
+#
+# `gpt-oss-20b-32k`, not the plain `gpt-oss:20b` you actually `ollama pull` --
+# it's a locally-created variant (`ollama create gpt-oss-20b-32k -f
+# Modelfile` with `FROM gpt-oss:20b` + `PARAMETER num_ctx 32768`, see
+# deploy/aoraki_run.slurm) with a larger context window. Ollama defaults
+# every model to a 4096-token window unless overridden this way, which is
+# too small for gpt-oss's reasoning to fit input + chain-of-thought + an
+# actual answer -- confirmed in practice as a silent failure (a response
+# with only reasoning content and no final answer at all, not even a
+# `finish_reason='length'` error) rather than the merely-tight-budget
+# problem the retry loop below can recover from.
 #
 # gpt-oss is a reasoning model: it spends tokens on chain-of-thought before
 # ever emitting the tool call, so max_tokens needs real headroom above what
@@ -17,30 +28,30 @@
 # too small).
 calls:
   effort_decision:
-    model: gpt-oss:20b
+    model: gpt-oss-20b-32k
     max_tokens: 1024
     temperature: 1.0
   vote:
-    model: gpt-oss:20b
+    model: gpt-oss-20b-32k
     # 2048, not the usual 1024 -- the vote itself is a short ballot id, but
     # gpt-oss spends tokens on chain-of-thought before emitting the tool
     # call, so this stays generous.
     max_tokens: 2048
     temperature: 1.0
   election_decision:
-    model: gpt-oss:20b
+    model: gpt-oss-20b-32k
     max_tokens: 1024
     temperature: 1.0
   importance_rating:
-    model: gpt-oss:20b
+    model: gpt-oss-20b-32k
     max_tokens: 512
     temperature: 0.0
   disclosure:
-    model: gpt-oss:20b
+    model: gpt-oss-20b-32k
     max_tokens: 1024
     temperature: 1.0
   proposal:
-    model: gpt-oss:20b
+    model: gpt-oss-20b-32k
     # 3072, not the usual 1024 -- fills personal_norm + community_proposal,
     # on top of gpt-oss's own reasoning overhead. This is the call type most
     # likely to hit finish_reason='length' with no tool call at all if
@@ -48,18 +59,18 @@ calls:
     max_tokens: 3072
     temperature: 1.0
   councillor_reply:
-    model: gpt-oss:20b
+    model: gpt-oss-20b-32k
     max_tokens: 2048
     temperature: 1.0
   monitor_review:
-    model: gpt-oss:20b
+    model: gpt-oss-20b-32k
     max_tokens: 512
     temperature: 1.0
   reflection:
-    model: gpt-oss:20b
+    model: gpt-oss-20b-32k
     max_tokens: 1024
     temperature: 1.0
   norm_compiler:
-    model: gpt-oss:20b
+    model: gpt-oss-20b-32k
     max_tokens: 1024
     temperature: 0.0

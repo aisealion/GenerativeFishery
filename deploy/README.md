@@ -45,6 +45,13 @@ du -sh ~                        # see how much of your 15GB quota is free first
 # inside the container shell:
 ollama pull gpt-oss:20b
 ollama list
+
+# Build the long-context variant too (see "Ollama's context window" below) --
+# both genfishery's own calls and the councillor's need this, not the plain
+# gpt-oss:20b:
+printf 'FROM gpt-oss:20b\nPARAMETER num_ctx 32768\n' > /tmp/genfishery.Modelfile
+ollama create gpt-oss-20b-32k -f /tmp/genfishery.Modelfile
+ollama list   # should now show both gpt-oss:20b and gpt-oss-20b-32k
 ```
 
 No `/projects` (or `/mnt`) access yet, so this pulls into the default
@@ -177,3 +184,20 @@ rest of that SSH session.
   `/mnt`/`/projects` access comes through, point `PGDATA_DIR` there instead,
   for the same reason as `OLLAMA_MODELS` above, and to actually persist
   event-log data across runs.
+- **Ollama's context window (confirmed as a real failure, not theoretical)**
+  — Ollama defaults every model to a 4096-token context window unless a
+  custom variant overrides it. In practice, `gpt-oss:20b`'s reasoning ran
+  the councillor's very first turn out of context before it ever produced
+  an actual answer: the response came back with a `reasoning` part
+  containing a fully-formed answer, but no `text` part at all, `finish:
+  "unknown"`, and zero token counts — a silent failure, not a clean error.
+  The fix is a locally-built long-context variant
+  (`gpt-oss-20b-32k` — `FROM gpt-oss:20b` + `PARAMETER num_ctx 32768`),
+  which `aoraki_run.slurm` now builds automatically every job right after
+  pulling the base model. This affects genfishery's own Ollama calls too
+  (`models_ollama.yaml` is hardcoded to `gpt-oss-20b-32k`, not
+  `gpt-oss:20b`), since they go through the exact same default-4096-context
+  path and could hit the same failure mode, just not yet observed. Passing
+  `num_ctx` per-request via the OpenAI-compatible endpoint (`extra_body`)
+  was deliberately avoided — Ollama's own GitHub issues flag it as
+  unreliable/version-dependent, unlike a real model variant.
