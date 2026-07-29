@@ -189,9 +189,7 @@ async def test_norm_adoption_compiles_and_resolves_an_elected_assign_role():
     winning_text = "The community should elect a monitor to oversee catches."
     fake_llm = FakeLLMClient(
         {
-            LLMCallType.PROPOSAL: ProposalDecision(
-                personal_norm="ok", community_proposal=winning_text, operationalization="Hold monthly reviews."
-            ),
+            LLMCallType.PROPOSAL: ProposalDecision(personal_norm="ok", community_proposal=winning_text),
             LLMCallType.VOTE: lambda response_model, system, prompt: response_model(chosen_id="1"),
             LLMCallType.NORM_COMPILER: NormCompilerOutput.model_validate(
                 {

@@ -19,6 +19,7 @@ class LLMCallType(StrEnum):
     EFFORT_DECISION = "effort_decision"
     PROPOSAL = "proposal"
     VOTE = "vote"
+    COUNCILLOR_REPLY = "councillor_reply"
     ELECTION_DECISION = "election_decision"
     MONITOR_REVIEW = "monitor_review"
     DISCLOSURE = "disclosure"
@@ -46,11 +47,14 @@ _DEFAULTS: dict[LLMCallType, ModelParams] = {
     LLMCallType.ELECTION_DECISION: ModelParams(model=HAIKU, max_tokens=256, temperature=1.0),
     LLMCallType.IMPORTANCE_RATING: ModelParams(model=HAIKU, max_tokens=64, temperature=0.0),
     LLMCallType.DISCLOSURE: ModelParams(model=HAIKU, max_tokens=256, temperature=1.0),
-    # Now has to fill personal_norm + community_proposal + operationalization
-    # in one call, and the operationalization prompt explicitly asks for
-    # detailed/specific/actionable text -- needs more headroom than a single
-    # short field would.
+    # Fills personal_norm + community_proposal in one call -- how to
+    # operationalize the proposal is no longer asked here; it's worked out
+    # afterward in a back-and-forth with the fishery councillor (see
+    # sim.engine.run_operationalization_discussion_phase).
     LLMCallType.PROPOSAL: ModelParams(model=SONNET, max_tokens=2048, temperature=1.0),
+    # One free-text reply per councillor turn -- similar shape/length to a
+    # VOTE call's headroom, not a load-bearing structured extraction.
+    LLMCallType.COUNCILLOR_REPLY: ModelParams(model=HAIKU, max_tokens=1024, temperature=1.0),
     LLMCallType.MONITOR_REVIEW: ModelParams(model=SONNET, max_tokens=512, temperature=1.0),
     LLMCallType.REFLECTION: ModelParams(model=SONNET, max_tokens=1024, temperature=1.0),
     LLMCallType.NORM_COMPILER: ModelParams(model=SONNET, max_tokens=1024, temperature=0.0),

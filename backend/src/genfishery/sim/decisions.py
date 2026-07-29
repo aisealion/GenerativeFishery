@@ -41,16 +41,22 @@ From the round after they arrive on, they're just another entry in
 `state.alive_agents` and participate in every phase identically to everyone
 else -- no special-casing anywhere in `engine.py`.
 
-Every proposal now bundles two things in one structured call
-(`ProposalDecision.community_proposal` + `.operationalization`): what the
-policy should be, and how it should actually be operationalized/enforced.
+A `ProposalDecision` is norm-only (`personal_norm` + `community_proposal`) --
+agents propose whatever policy they want with no operationalization question
+attached. How to operationalize it is worked out afterward, one proposing
+agent at a time, in a back-and-forth with the fishery councillor
+(`sim.engine.run_operationalization_discussion_phase`): the councillor asks
+how the norm should work in practice, the agent replies via
+`decide_councillor_reply`/`build_councillor_reply_prompt` below, and on the
+final configured round the agent is told to finalize a concrete,
+operationalizable version -- that final reply becomes `.operationalization`.
 Voting and compiling both carry the pair through together as one
 `PolicyProposal` candidate (see `proposal_candidate_key` -- the display text
 shown on the ballot; the vote itself picks a short 1-indexed ballot id, not
 this text, since asking a model to reproduce a long string byte-for-byte
 turned out to be fragile -- see `build_vote_response_model`), so voting for
 a candidate commits to its enforcement detail too, not just its headline
-text -- not a separately-clustered/voted add-on.
+text.
 """
 
 from dataclasses import dataclass
@@ -58,7 +64,16 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, create_model
 
-from genfishery.models.norms import PeerObservability
+from genfishery.models.norms import (
+    AdjustPrimitive,
+    AssignRolePrimitive,
+    CapPrimitive,
+    DeclarePrimitive,
+    MonitorPrimitive,
+    PeerObservability,
+    PenalisePrimitive,
+    RedistributePrimitive,
+)
 from genfishery.sim.state import NO_NORM_YET, FisheryState
 
 __all__ = [
@@ -68,10 +83,13 @@ __all__ = [
     "PolicyProposal",
     "proposal_candidate_key",
     "NominationDecision",
+    "CouncillorReplyDecision",
+    "active_norms_summary",
     "build_effort_prompt",
     "build_proposal_prompt",
     "build_vote_prompt",
     "build_vote_response_model",
+    "build_councillor_reply_prompt",
     "build_nomination_prompt",
     "build_election_vote_prompt",
     "build_election_vote_response_model",
@@ -85,9 +103,10 @@ class EffortDecision(BaseModel):
 class ProposalDecision(BaseModel):
     personal_norm: str = Field(description="Your updated personal strategy/belief.")
     community_proposal: str = Field(description="What you propose the whole community should do.")
-    operationalization: str = Field(
-        description="How this policy should actually be operationalized/enforced within the fishery."
-    )
+
+
+class CouncillorReplyDecision(BaseModel):
+    reply: str = Field(description="Your reply to the fishery councillor.")
 
 
 @dataclass(frozen=True)
@@ -153,6 +172,53 @@ def _observations_block(state: FisheryState, viewer_id: str) -> str:
     return "\n".join(lines)
 
 
+def active_norms_summary(state: FisheryState) -> str:
+    """One plain-fisherman-language line per currently active norm primitive
+    -- the "how this fishery currently works" grounding fed to the fishery
+    councillor, in the same domain vocabulary `norm_compiler.py`'s extraction
+    prompt already uses for humans, never the primitive's own type/field names.
+    """
+    if not state.active_norms:
+        return "No formal rules are in place yet -- villagers fish under their own personal strategies only."
+
+    lines = []
+    for norm in state.active_norms:
+        if isinstance(norm, CapPrimitive):
+            lines.append(
+                f"- A catch limit is in place: {norm.basis.replace('_', ' ')} of {norm.value}, "
+                f"applied {norm.cap_scope.replace('_', ' ')}."
+            )
+        elif isinstance(norm, DeclarePrimitive):
+            lines.append(
+                f"- Villagers must publicly state their {norm.content.replace('_', ' ')} "
+                f"{norm.timing.replace('_', ' ')}, visible {norm.disclosure_visibility.replace('_', ' ')}."
+            )
+        elif isinstance(norm, MonitorPrimitive):
+            lines.append(
+                f"- Compliance is checked via {norm.method.replace('_', ' ')}, {norm.frequency.replace('_', ' ')}."
+            )
+        elif isinstance(norm, PenalisePrimitive):
+            lines.append(
+                f"- Anyone who triggers {norm.trigger.replace('_', ' ')} is automatically "
+                f"{norm.penalty_type.replace('_', ' ')}."
+            )
+        elif isinstance(norm, AdjustPrimitive):
+            lines.append(
+                f"- The {norm.adjust_target.replace('_', ' ')} is automatically "
+                f"{norm.direction.replace('_', ' ')}d on {norm.trigger.replace('_', ' ')}."
+            )
+        elif isinstance(norm, RedistributePrimitive):
+            lines.append(
+                f"- Forfeited or collected fish get redistributed to {norm.destination.replace('_', ' ')} "
+                f"on {norm.trigger.replace('_', ' ')}."
+            )
+        elif isinstance(norm, AssignRolePrimitive):
+            lines.append(f"- There's a {norm.role_name.replace('_', ' ')} role, chosen by {norm.selection}.")
+        elif isinstance(norm, PeerObservability):
+            lines.append("- Everyone's fishing effort and earnings are visible to the whole community.")
+    return "\n".join(lines)
+
+
 def _preamble(
     state: FisheryState, viewer_id: str, agent_norm: str, group_norm: str, memories: str = ""
 ) -> str:
@@ -212,17 +278,49 @@ def build_proposal_prompt(
 Based on your observations:
 1. Update your personal strategy about what you should do
 2. Propose what the others should do in the community
-3. Suggest how that shared community policy should actually be operationalized or enforced
-   within the fishery
 
-When proposing how the policy should be operationalized, make your proposal
-specific and actionable rather than abstract or vague. The community should
-be able to put the proposed policy into practice using only the people and
-resources already available within the fishery. Do not assume that external
-authorities, outsiders, or additional people will come to help. Clearly
-specify any concrete actions, responsibilities, limits, thresholds, or
-consequences needed to make the proposed policy work in practice, including
-who within the community is responsible for carrying them out."""
+Propose whatever policy you think is right -- you'll discuss how to actually
+put it into practice with the fishery councillor afterward."""
+    return system, prompt
+
+
+def _transcript_block(transcript: list[tuple[str, str]]) -> str:
+    if not transcript:
+        return ""
+    lines = [f'{"Councillor" if speaker == "councillor" else "You"}: "{text}"' for speaker, text in transcript]
+    return "\n\nDiscussion so far:\n" + "\n".join(lines)
+
+
+def build_councillor_reply_prompt(
+    *,
+    state: FisheryState,
+    viewer_id: str,
+    community_proposal: str,
+    transcript: list[tuple[str, str]],
+    councillor_message: str,
+    is_final_turn: bool,
+    agent_norm: str = NO_NORM_YET,
+    group_norm: str = NO_NORM_YET,
+    memories: str = "",
+) -> tuple[str, str]:
+    system = "You are a villager who fishes from a shared lake together with others in your community."
+    finalize_block = (
+        "\n\nThis is the final round of this discussion. Finalize your norm now into one "
+        "clear, concrete, operationalizable version -- this exact text becomes the fishery's "
+        "official policy going to a vote."
+        if is_final_turn
+        else ""
+    )
+    prompt = f"""{_preamble(state, viewer_id, agent_norm, group_norm, memories)}
+
+You proposed this policy to the community: "{community_proposal}"
+
+You are now discussing with the fishery counsellor -- who knows how this fishery
+currently works right now -- how your proposal should actually work in practice.{_transcript_block(transcript)}
+
+The counsellor says: "{councillor_message}"{finalize_block}
+
+Reply to the counsellor."""
     return system, prompt
 
 

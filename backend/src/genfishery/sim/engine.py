@@ -16,14 +16,17 @@ unconditionally regardless, but no-op when their primitive type isn't active
 not the governance-specific protocol; punishment is no longer a per-agent
 decision, so none of them need `GovernanceDecisionSource` either.
 
-Every proposal now bundles both what the policy should be AND how to
-operationalize/enforce it in one structured call
-(`ProposalDecision.community_proposal` + `.operationalization`), carried
-through voting and into the compiler together as one `PolicyProposal`
-candidate (`sim.decisions.proposal_candidate_key` is its display text on the
-ballot, both fields folded into it; the vote itself picks a short ballot id
-rather than reproducing this text). The winning proposal's operationalization
-detail is appended directly to the text
+Each agent proposes only a norm (`ProposalDecision.community_proposal`, no
+operationalization question attached). Right after proposing, that agent
+discusses how to operationalize it with the fishery councillor --
+`run_operationalization_discussion_phase` -- for
+`state.config.operationalization_discussion_rounds` turn-pairs; the final
+turn's reply is the finalized operationalization text. Voting and compiling
+then carry the (norm, operationalization) pair through together as one
+`PolicyProposal` candidate (`sim.decisions.proposal_candidate_key` is its
+display text on the ballot, both fields folded into it; the vote itself picks
+a short ballot id rather than reproducing this text). The winning proposal's
+operationalization detail is appended directly to the text
 `NormCompiler.compile` receives, so the compiled primitives reflect the
 community's practical detail, not just the policy's headline text.
 """
@@ -32,6 +35,7 @@ import logging
 import random
 from typing import Literal
 
+from genfishery.councillor.client import CouncillorClient
 from genfishery.llm.client import LLMClient, LLMStructuredCallError
 from genfishery.memory.registry import MemoryBankRegistry
 from genfishery.memory.writer import write_observation
@@ -47,7 +51,7 @@ from genfishery.models.norms import (
     PenalisePrimitive,
     RedistributePrimitive,
 )
-from genfishery.sim.decisions import PolicyProposal
+from genfishery.sim.decisions import PolicyProposal, active_norms_summary
 from genfishery.sim.events_sink import EventSink, RoundEventCollector
 from genfishery.sim.norm_compiler import NormCompiler
 from genfishery.sim.observations import render_event_as_observation
@@ -444,13 +448,89 @@ async def run_starvation_check(state: FisheryState, events: EventSink) -> bool:
     return underharvest_death
 
 
+async def run_operationalization_discussion_phase(
+    state: FisheryState,
+    decisions: GovernanceDecisionSource,
+    events: EventSink,
+    councillor: CouncillorClient,
+    *,
+    agent_id: str,
+    community_proposal: str,
+    rounds: int,
+) -> str:
+    """One proposing agent's private back-and-forth with the fishery
+    councillor about how to put `community_proposal` into practice --
+    one `opencode` session for the whole discussion (not a fresh session per
+    turn), so the councillor's own conversational memory carries across
+    turns. The councillor asks the opening question; each turn after that is
+    just the agent's last reply relayed back into the same session, and the
+    councillor's (opencode-generated) response relayed back to the agent.
+    The final turn's reply is finalized -- returned as the operationalization
+    text -- rather than relayed onward.
+    """
+    session_id = await councillor.start_session(title=f"{state.config.fishery_id}-{agent_id}-r{state.round}")
+    opening_message = f"""A villager just proposed this policy to their fishing community: "{community_proposal}"
+
+Here's how the fishery currently works:
+{active_norms_summary(state)}
+
+Ask the villager how they think this policy should actually be operationalized -- put into practice."""
+    councillor_message = await councillor.ask(session_id, opening_message)
+
+    transcript: list[tuple[str, str]] = []
+    for turn in range(rounds):
+        is_final_turn = turn == rounds - 1
+        reply = await decisions.decide_councillor_reply(
+            agent_id,
+            state,
+            community_proposal=community_proposal,
+            transcript=transcript,
+            councillor_message=councillor_message,
+            is_final_turn=is_final_turn,
+        )
+        await events.record(
+            Event.create(
+                fishery_id=state.config.fishery_id,
+                round=state.round,
+                phase="operationalization_discussion",
+                type=EventType.COUNCILLOR_QUESTION,
+                actor_id=agent_id,
+                payload={"message": councillor_message},
+            )
+        )
+        await events.record(
+            Event.create(
+                fishery_id=state.config.fishery_id,
+                round=state.round,
+                phase="operationalization_discussion",
+                type=EventType.COUNCILLOR_DISCUSSION_REPLY,
+                actor_id=agent_id,
+                payload={"message": reply},
+            )
+        )
+        transcript.append(("councillor", councillor_message))
+        transcript.append(("agent", reply))
+        if is_final_turn:
+            return reply
+        councillor_message = await councillor.ask(session_id, reply)
+
+    return community_proposal  # unreachable: `rounds` is validated >= 1
+
+
 async def run_propose_phase(
-    state: FisheryState, decisions: GovernanceDecisionSource, events: EventSink
+    state: FisheryState,
+    decisions: GovernanceDecisionSource,
+    events: EventSink,
+    *,
+    councillor: CouncillorClient | None = None,
 ) -> dict[str, PolicyProposal]:
     """Each agent updates its own personal norm (private) and proposes a
-    bundled community policy + how to operationalize/enforce it (public
-    candidate for this round's vote). Returns agent_id -> proposed
-    `PolicyProposal`.
+    community policy (public candidate for this round's vote). When a
+    councillor is available, the proposing agent immediately discusses how to
+    operationalize that policy (`run_operationalization_discussion_phase`);
+    without one (e.g. existing tests, or a deployment that hasn't wired up
+    opencode), operationalization is left blank rather than asked for in the
+    same call it used to be. Returns agent_id -> proposed `PolicyProposal`.
     """
     proposals: dict[str, PolicyProposal] = {}
     for agent in state.alive_agents:
@@ -466,8 +546,20 @@ async def run_propose_phase(
                 payload={"personal_norm": decision.personal_norm},
             )
         )
+        if councillor is not None:
+            operationalization = await run_operationalization_discussion_phase(
+                state,
+                decisions,
+                events,
+                councillor,
+                agent_id=agent.agent_id,
+                community_proposal=decision.community_proposal,
+                rounds=state.config.operationalization_discussion_rounds,
+            )
+        else:
+            operationalization = ""
         proposal = PolicyProposal(
-            community_proposal=decision.community_proposal, operationalization=decision.operationalization
+            community_proposal=decision.community_proposal, operationalization=operationalization
         )
         proposals[agent.agent_id] = proposal
         await events.record(
@@ -683,8 +775,10 @@ async def run_norm_adoption(
     decisions: GovernanceDecisionSource,
     norm_compiler: NormCompiler,
     events: EventSink,
+    *,
+    councillor: CouncillorClient | None = None,
 ) -> None:
-    proposals = await run_propose_phase(state, decisions, events)
+    proposals = await run_propose_phase(state, decisions, events, councillor=councillor)
     winner = await run_vote_phase(state, decisions, events, proposals)
     if winner is None or winner.community_proposal == state.group_norm_text:
         await update_role_rotations(state, events)
@@ -745,7 +839,7 @@ async def run_memory_write_phase(
     """Turns this round's events into memory-stream writes, per agent, per
     build spec §3 ("every observation ... stored"). Visibility-filtered via
     `Event.is_visible_to` -- an agent only ever remembers what they were
-    actually entitled to see, same rule the frontend/prompt assembly uses.
+    actually entitled to see, same rule prompt assembly uses.
 
     Memory-writing is best-effort: this round's game state (effort, harvest,
     payoffs, norms) is already finalized by the time this runs, so a single
@@ -801,6 +895,7 @@ async def run_round(
     norm_compiler: NormCompiler | None = None,
     llm: LLMClient | None = None,
     memory_registry: MemoryBankRegistry | None = None,
+    councillor: CouncillorClient | None = None,
 ) -> None:
     collector = RoundEventCollector(events)
     state.round += 1
@@ -816,7 +911,7 @@ async def run_round(
     had_underharvest_death = await run_starvation_check(state, collector)
 
     if norm_compiler is not None:
-        await run_norm_adoption(state, decisions, norm_compiler, collector)
+        await run_norm_adoption(state, decisions, norm_compiler, collector, councillor=councillor)
 
     if check_fishery_collapse(state, underharvest_death_this_round=had_underharvest_death):
         state.collapsed = True
@@ -847,6 +942,7 @@ async def run_simulation(
     norm_compiler: NormCompiler | None = None,
     llm: LLMClient | None = None,
     memory_registry: MemoryBankRegistry | None = None,
+    councillor: CouncillorClient | None = None,
 ) -> int:
     """Run rounds until collapse or `max_rounds`; returns the survival time T_s."""
     while not state.collapsed:
@@ -859,5 +955,6 @@ async def run_simulation(
             norm_compiler=norm_compiler,
             llm=llm,
             memory_registry=memory_registry,
+            councillor=councillor,
         )
     return state.round

@@ -17,6 +17,8 @@ from pathlib import Path
 
 from genfishery.config.fishery_config import FisheryConfig
 from genfishery.config.model_config import ModelConfig
+from genfishery.councillor.client import CouncillorClient
+from genfishery.councillor.logging_client import LoggingCouncillorClient
 from genfishery.llm.client import LLMClient
 from genfishery.llm.logging_client import LoggingLLMClient
 from genfishery.memory.registry import MemoryBankRegistry
@@ -41,6 +43,7 @@ class FisheryRunner:
         *,
         round_interval_seconds: float = 4.0,
         log_dir: Path | None = None,
+        councillor_client: CouncillorClient | None = None,
     ) -> None:
         self.state = FisheryState.initial(config)
         self.events = events
@@ -58,6 +61,22 @@ class FisheryRunner:
                 log_dir / f"{config.fishery_id}.log",
                 fishery_id=config.fishery_id,
                 get_round=lambda: self.state.round,
+            )
+        )
+        # `councillor_client` is optional -- absent it, `run_propose_phase`
+        # skips the operationalization discussion entirely (see its own
+        # docstring), same "None preserves old behavior" convention as `llm`.
+        self.councillor = (
+            None
+            if councillor_client is None
+            else (
+                councillor_client
+                if log_dir is None
+                else LoggingCouncillorClient(
+                    councillor_client,
+                    log_dir / f"{config.fishery_id}_councillor.log",
+                    fishery_id=config.fishery_id,
+                )
             )
         )
         self.memory_registry = memory_registry
@@ -95,6 +114,7 @@ class FisheryRunner:
                     norm_compiler=self.norm_compiler,
                     llm=self.llm,
                     memory_registry=self.memory_registry,
+                    councillor=self.councillor,
                 )
             except Exception:
                 logger.exception(

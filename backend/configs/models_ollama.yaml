@@ -41,12 +41,15 @@ calls:
     temperature: 1.0
   proposal:
     model: gpt-oss:20b
-    # 3072, not the usual 1024 -- fills 3 fields now (personal_norm,
-    # community_proposal, operationalization), the last of which explicitly
-    # asks for detailed/specific/actionable text, on top of gpt-oss's own
-    # reasoning overhead. This is the call type most likely to hit
-    # finish_reason='length' with no tool call at all if underfunded.
+    # 3072, not the usual 1024 -- fills personal_norm + community_proposal,
+    # on top of gpt-oss's own reasoning overhead. This is the call type most
+    # likely to hit finish_reason='length' with no tool call at all if
+    # underfunded.
     max_tokens: 3072
+    temperature: 1.0
+  councillor_reply:
+    model: gpt-oss:20b
+    max_tokens: 2048
     temperature: 1.0
   monitor_review:
     model: gpt-oss:20b

@@ -35,6 +35,8 @@ class EventType(StrEnum):
     PROPOSAL_MADE = "proposal_made"
     VOTE_CAST = "vote_cast"
     VOTE_RESULT = "vote_result"
+    COUNCILLOR_QUESTION = "councillor_question"
+    COUNCILLOR_DISCUSSION_REPLY = "councillor_discussion_reply"
     NORM_ADOPTED = "norm_adopted"
     NORM_COULD_NOT_COMPILE = "could_not_compile"
     ROLE_ELECTION_CALLED = "role_election_called"
@@ -61,6 +63,8 @@ VISIBILITY_BY_EVENT_TYPE: dict[EventType, Visibility] = {
     EventType.PROPOSAL_MADE: Visibility.PUBLIC,
     EventType.VOTE_CAST: Visibility.ACTOR_ONLY,
     EventType.VOTE_RESULT: Visibility.PUBLIC,
+    EventType.COUNCILLOR_QUESTION: Visibility.ACTOR_ONLY,
+    EventType.COUNCILLOR_DISCUSSION_REPLY: Visibility.ACTOR_ONLY,
     EventType.NORM_ADOPTED: Visibility.PUBLIC,
     EventType.NORM_COULD_NOT_COMPILE: Visibility.PUBLIC,
     EventType.ROLE_ELECTION_CALLED: Visibility.PUBLIC,

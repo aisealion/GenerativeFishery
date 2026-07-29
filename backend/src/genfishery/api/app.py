@@ -27,6 +27,8 @@ from genfishery.api.routes import router
 from genfishery.api.runner import FisheryRunner, link_migration
 from genfishery.config.fishery_config import FisheryConfig
 from genfishery.config.model_config import ModelConfig
+from genfishery.councillor.client import CouncillorClient, HttpCouncillorClient
+from genfishery.councillor.config import build_default_councillor_client
 from genfishery.db.session import DEFAULT_DATABASE_URL
 from genfishery.llm.client import LLMClient
 from genfishery.llm.provider import build_default_llm_client
@@ -65,11 +67,20 @@ def create_app(
     round_interval_seconds: float = 4.0,
     embedder: Callable[[str], np.ndarray] | None = None,
     log_dir: Path | None = Path("logs"),
+    councillor_client: CouncillorClient | None = None,
 ) -> FastAPI:
     """`log_dir` (default "./logs", relative to wherever the process is run
     from): every prompt/response for a fishery is appended to
     `{log_dir}/{fishery_id}.log`, in call order -- see `LoggingLLMClient`.
-    Pass None to disable (tests do this, to avoid writing real files).
+    Pass None to disable (tests do this, to avoid writing real files). When a
+    councillor is wired up (see `councillor_client` below), its discussion
+    transcript is logged the same way, to `{log_dir}/{fishery_id}_councillor.log`.
+
+    `councillor_client` is optional: pass one explicitly (tests, a shared
+    instance across apps), or set `OPENCODE_SERVER_URL` to have one built
+    automatically from `councillor.config.build_default_councillor_client`.
+    Leave both unset to skip the operationalization discussion entirely --
+    the default, and what every existing deployment/test does.
     """
     resolved_configs = fishery_configs or _load_default_demo_configs()
 
@@ -89,6 +100,19 @@ def create_app(
             # strings are meaningless to any other provider's endpoint.
             resolved_llm, resolved_model_config = build_default_llm_client()
         resolved_embedder = embedder or get_embedder()
+        # Unlike `llm_client`, this has no always-on default: opencode is an
+        # optional add-on, and most deployments (every existing test
+        # included) don't have a councillor server running. Only auto-build
+        # one when the deployment has explicitly opted in via
+        # OPENCODE_SERVER_URL -- otherwise stay None, which
+        # `run_propose_phase` treats as "skip the discussion" (see its
+        # docstring), same as before this feature existed.
+        if councillor_client is not None:
+            resolved_councillor = councillor_client
+        elif os.environ.get("OPENCODE_SERVER_URL"):
+            resolved_councillor = build_default_councillor_client(resolved_model_config)
+        else:
+            resolved_councillor = None
 
         # A dedicated engine per app instance (not `db.session`'s
         # process-wide `@lru_cache`'d one): a background FisheryRunner task
@@ -118,6 +142,7 @@ def create_app(
                 memory_registry,
                 round_interval_seconds=round_interval_seconds,
                 log_dir=log_dir,
+                councillor_client=resolved_councillor,
             )
             for config in resolved_configs
         }
@@ -147,6 +172,11 @@ def create_app(
                 await runner.stop()
             await notify_bridge.stop()
             await engine.dispose()
+            # Only close it if this lifespan built it -- a caller-supplied
+            # `councillor_client` override (tests, a shared instance across
+            # apps) is theirs to close, not ours.
+            if councillor_client is None and isinstance(resolved_councillor, HttpCouncillorClient):
+                await resolved_councillor.aclose()
 
     app = FastAPI(title="GenFishery API", lifespan=lifespan)
     app.include_router(router)

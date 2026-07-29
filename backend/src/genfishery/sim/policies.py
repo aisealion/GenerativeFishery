@@ -20,10 +20,12 @@ from genfishery.config.model_config import LLMCallType, ModelConfig
 from genfishery.llm.client import LLMClient
 from genfishery.memory.registry import MemoryBankRegistry
 from genfishery.sim.decisions import (
+    CouncillorReplyDecision,
     EffortDecision,
     NominationDecision,
     PolicyProposal,
     ProposalDecision,
+    build_councillor_reply_prompt,
     build_effort_prompt,
     build_election_vote_prompt,
     build_election_vote_response_model,
@@ -50,6 +52,17 @@ class GovernanceDecisionSource(Protocol):
     async def decide_vote(
         self, agent_id: str, state: FisheryState, *, candidates: list[PolicyProposal]
     ) -> PolicyProposal: ...
+
+    async def decide_councillor_reply(
+        self,
+        agent_id: str,
+        state: FisheryState,
+        *,
+        community_proposal: str,
+        transcript: list[tuple[str, str]],
+        councillor_message: str,
+        is_final_turn: bool,
+    ) -> str: ...
 
     async def decide_nomination(self, agent_id: str, state: FisheryState, *, role_name: str) -> bool: ...
 
@@ -150,6 +163,38 @@ class LLMDecisionSource:
             response_model=vote_model,
         )
         return candidates[int(decision.chosen_id) - 1]
+
+    async def decide_councillor_reply(
+        self,
+        agent_id: str,
+        state: FisheryState,
+        *,
+        community_proposal: str,
+        transcript: list[tuple[str, str]],
+        councillor_message: str,
+        is_final_turn: bool,
+    ) -> str:
+        memories = await self._memory_block(
+            agent_id, state, "How should my proposed policy actually be put into practice?"
+        )
+        system, prompt = build_councillor_reply_prompt(
+            state=state,
+            viewer_id=agent_id,
+            community_proposal=community_proposal,
+            transcript=transcript,
+            councillor_message=councillor_message,
+            is_final_turn=is_final_turn,
+            agent_norm=state.agent_norms.get(agent_id, NO_NORM_YET),
+            group_norm=state.group_norm_text,
+            memories=memories,
+        )
+        decision = await self._llm.structured_call(
+            call_type=LLMCallType.COUNCILLOR_REPLY,
+            system=system,
+            prompt=prompt,
+            response_model=CouncillorReplyDecision,
+        )
+        return decision.reply
 
     async def decide_nomination(self, agent_id: str, state: FisheryState, *, role_name: str) -> bool:
         memories = await self._memory_block(

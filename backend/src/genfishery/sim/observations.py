@@ -93,6 +93,12 @@ def render_event_as_observation(event: Event, viewer_id: str) -> str | None:
             f'(to operationalize: "{payload["operationalization"]}").'
         )
 
+    if event.type == EventType.COUNCILLOR_QUESTION:
+        return f'The fishery counsellor asked me: "{payload["message"]}"'
+
+    if event.type == EventType.COUNCILLOR_DISCUSSION_REPLY:
+        return f'I told the fishery counsellor: "{payload["message"]}"'
+
     if event.type == EventType.NORM_ADOPTED:
         return f'The community adopted a new policy: "{payload["raw_text"]}"'
 

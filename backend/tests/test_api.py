@@ -49,7 +49,6 @@ def make_test_llm() -> FakeLLMClient:
             LLMCallType.PROPOSAL: ProposalDecision(
                 personal_norm="stay the course",
                 community_proposal="Keep fishing moderately.",
-                operationalization="Check in weekly.",
             ),
             LLMCallType.VOTE: lambda response_model, system, prompt: response_model(chosen_id="1"),
             LLMCallType.NORM_COMPILER: NormCompilerOutput(primitives=[]),

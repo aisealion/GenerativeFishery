@@ -26,3 +26,23 @@ Backend:
 export FISHERY_CONFIGS=live_demo_a.yaml
 cd backend && uv run uvicorn genfishery.api.app:app --port 8000
 (comma-separate for multiple, e.g. FISHERY_CONFIGS=live_demo_a.yaml,live_demo_b.yaml — that's also the default when unset). With only one fishery, there's no migration counterpart, so migration just never triggers — everything else works the same.
+
+Fishery councillor (optional): after each agent proposes a norm, they discuss
+how to operationalize it with the fishery councillor — a real `opencode`
+agent reached over its HTTP server API. This is off by default (proposals
+just skip straight to voting with a blank operationalization). To turn it on:
+
+```
+opencode serve --hostname 127.0.0.1 --port 4096   # in another terminal
+export OPENCODE_SERVER_URL=http://127.0.0.1:4096
+cd backend && uv run uvicorn genfishery.api.app:app --port 8000
+```
+
+`OPENCODE_MODEL_ID` defaults to whatever model `LLM_PROVIDER` is already
+using for proposals; `OPENCODE_PROVIDER_ID` (default `ollama`) and
+`OPENCODE_AGENT` (default `fishery-councillor`) rarely need overriding. See
+`opencode.json`/`.opencode/agent/fishery-councillor.md` at the repo root for
+its persona and provider config.
+
+Running on Aoraki (Otago's HPC cluster), with Ollama + opencode both
+backgrounded in one Slurm job: see [`deploy/README.md`](../deploy/README.md).

@@ -35,17 +35,9 @@ def make_decisions(script: dict) -> LLMDecisionSource:
 async def test_propose_phase_updates_personal_norms_and_logs_events():
     state = FisheryState.initial(make_config())
     proposals_by_agent = {
-        "a1": ProposalDecision(
-            personal_norm="fish less", community_proposal="cap effort at 0.3", operationalization="check weekly"
-        ),
-        "a2": ProposalDecision(
-            personal_norm="fish less too",
-            community_proposal="cap effort at 0.3",
-            operationalization="check weekly",
-        ),
-        "a3": ProposalDecision(
-            personal_norm="fish more", community_proposal="no cap needed", operationalization="n/a"
-        ),
+        "a1": ProposalDecision(personal_norm="fish less", community_proposal="cap effort at 0.3"),
+        "a2": ProposalDecision(personal_norm="fish less too", community_proposal="cap effort at 0.3"),
+        "a3": ProposalDecision(personal_norm="fish more", community_proposal="no cap needed"),
     }
 
     class ScriptedProposalSource:
@@ -53,12 +45,14 @@ async def test_propose_phase_updates_personal_norms_and_logs_events():
             return proposals_by_agent[agent_id]
 
     events = InMemoryEventSink()
+    # No councillor wired up -- operationalization is left blank rather than
+    # discussed (see `run_propose_phase`'s docstring).
     proposals = await run_propose_phase(state, ScriptedProposalSource(), events)
 
     assert proposals == {
-        "a1": PolicyProposal(community_proposal="cap effort at 0.3", operationalization="check weekly"),
-        "a2": PolicyProposal(community_proposal="cap effort at 0.3", operationalization="check weekly"),
-        "a3": PolicyProposal(community_proposal="no cap needed", operationalization="n/a"),
+        "a1": PolicyProposal(community_proposal="cap effort at 0.3", operationalization=""),
+        "a2": PolicyProposal(community_proposal="cap effort at 0.3", operationalization=""),
+        "a3": PolicyProposal(community_proposal="no cap needed", operationalization=""),
     }
     assert state.agent_norms["a1"] == "fish less"
     assert state.agent_norms["a3"] == "fish more"
@@ -69,7 +63,7 @@ async def test_propose_phase_updates_personal_norms_and_logs_events():
     assert all(e.visibility.value == "actor_only" for e in personal_events)
     assert len(proposal_events) == 3
     assert all(e.visibility.value == "public" for e in proposal_events)
-    assert proposal_events[0].payload["operationalization"] == "check weekly"
+    assert proposal_events[0].payload["operationalization"] == ""
 
 
 async def test_vote_phase_dedupes_candidates_and_tallies_majority():
@@ -202,9 +196,7 @@ async def test_run_norm_adoption_updates_group_norm_and_active_norms_on_success(
     state = FisheryState.initial(make_config())
     winning_text = "No one should catch more than 20 units."
     script = {
-        LLMCallType.PROPOSAL: ProposalDecision(
-            personal_norm="ok", community_proposal=winning_text, operationalization="Review weekly."
-        ),
+        LLMCallType.PROPOSAL: ProposalDecision(personal_norm="ok", community_proposal=winning_text),
         LLMCallType.NORM_COMPILER: NormCompilerOutput.model_validate(
             {
                 "primitives": [
@@ -241,9 +233,7 @@ async def test_run_norm_adoption_could_not_compile_still_updates_group_norm_text
     winning_text = "Be kind to your neighbors."
     fake_llm = FakeLLMClient(
         {
-            LLMCallType.PROPOSAL: ProposalDecision(
-                personal_norm="ok", community_proposal=winning_text, operationalization="Just be nice."
-            ),
+            LLMCallType.PROPOSAL: ProposalDecision(personal_norm="ok", community_proposal=winning_text),
             LLMCallType.NORM_COMPILER: NormCompilerOutput(primitives=[]),
             LLMCallType.VOTE: lambda response_model, system, prompt: response_model(
                 chosen_id="1"
@@ -288,9 +278,7 @@ async def test_peer_observability_is_silent_until_a_norm_enables_it_then_activat
     winning_text = "Let's make everyone's effort and earnings visible to the whole community."
     script = {
         LLMCallType.EFFORT_DECISION: EffortDecision(effort=0.3),
-        LLMCallType.PROPOSAL: ProposalDecision(
-            personal_norm="ok", community_proposal=winning_text, operationalization="Publish a shared log."
-        ),
+        LLMCallType.PROPOSAL: ProposalDecision(personal_norm="ok", community_proposal=winning_text),
         LLMCallType.NORM_COMPILER: NormCompilerOutput.model_validate(
             {"primitives": [{"type": "peer_observability"}]}
         ),

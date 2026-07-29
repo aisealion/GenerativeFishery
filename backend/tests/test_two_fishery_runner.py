@@ -54,9 +54,7 @@ def make_llm() -> FakeLLMClient:
         {
             LLMCallType.EFFORT_DECISION: EffortDecision(effort=0.5),
             LLMCallType.IMPORTANCE_RATING: ImportanceRating(score=1.0),
-            LLMCallType.PROPOSAL: ProposalDecision(
-                personal_norm="ok", community_proposal="Carry on.", operationalization="No change needed."
-            ),
+            LLMCallType.PROPOSAL: ProposalDecision(personal_norm="ok", community_proposal="Carry on."),
             LLMCallType.VOTE: lambda response_model, system, prompt: response_model(chosen_id="1"),
             LLMCallType.NORM_COMPILER: NormCompilerOutput(primitives=[]),
         }

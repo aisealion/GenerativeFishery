@@ -29,7 +29,11 @@ calls:
     temperature: 1.0
   proposal:
     model: claude-sonnet-5
-    max_tokens: 2048  # fills 3 fields now (personal_norm, community_proposal, operationalization)
+    max_tokens: 2048  # fills personal_norm + community_proposal
+    temperature: 1.0
+  councillor_reply:
+    model: claude-haiku-4-5-20251001
+    max_tokens: 1024
     temperature: 1.0
   monitor_review:
     model: claude-sonnet-5

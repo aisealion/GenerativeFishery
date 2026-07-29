@@ -37,3 +37,10 @@ class FisheryConfig(BaseModel):
     altruism_ratio: float = Field(
         default=0.5, ge=0.0, le=1.0, description="Fraction of agents starting with an altruistic persona"
     )
+
+    # After each agent proposes a norm, the fishery councillor and that agent
+    # go back and forth this many turn-pairs before the agent's norm is
+    # finalized for voting (see sim.engine.run_operationalization_discussion_phase).
+    operationalization_discussion_rounds: int = Field(
+        default=5, ge=1, description="Councillor Q / agent A turn-pairs before a proposal is finalized"
+    )
