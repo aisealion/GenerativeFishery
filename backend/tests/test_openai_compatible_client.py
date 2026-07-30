@@ -9,6 +9,8 @@ hitting a real endpoint.
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
+import openai
 import pytest
 from pydantic import BaseModel, Field
 
@@ -139,6 +141,37 @@ async def test_structured_call_retries_after_no_tool_call_then_succeeds():
 
     assert result.effort == 0.7
     assert client._client.chat.completions.create.await_count == 2
+
+
+def _internal_server_error(message: str) -> openai.InternalServerError:
+    response = httpx.Response(status_code=500, request=httpx.Request("POST", "http://example.invalid/v1"))
+    return openai.InternalServerError(message, response=response, body=None)
+
+
+async def test_structured_call_retries_after_provider_5xx_then_succeeds():
+    """Confirmed failure mode with Ollama + gpt-oss: a too-long answer cuts
+    the tool call's JSON off mid-string, and Ollama fails constructing it
+    server-side with a 500 ("unexpected end of JSON input") -- raised by the
+    openai SDK as InternalServerError, never reaching the tool-call/JSON
+    checks below, so it needs its own retry path.
+    """
+    client = make_client()
+    client._client.chat.completions.create = AsyncMock(
+        side_effect=[
+            _internal_server_error("error parsing tool call: unexpected end of JSON input"),
+            _mock_response({"effort": 0.6}),
+        ]
+    )
+
+    result = await client.structured_call(
+        call_type=LLMCallType.EFFORT_DECISION, system="sys", prompt="p", response_model=Decision
+    )
+
+    assert result.effort == 0.6
+    assert client._client.chat.completions.create.await_count == 2
+    second_call_messages = client._client.chat.completions.create.await_args_list[1].kwargs["messages"]
+    assert second_call_messages[-1]["role"] == "user"
+    assert "shorter" in second_call_messages[-1]["content"]
 
 
 async def test_structured_call_gives_up_after_max_attempts():

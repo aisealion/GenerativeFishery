@@ -17,7 +17,9 @@ def test_resolve_model_config_litellm_covers_every_call_type_with_gpt5_4():
 def test_resolve_model_config_ollama_covers_every_call_type_with_local_model():
     config = resolve_model_config("ollama")
     for call_type in LLMCallType:
-        assert config.for_call(call_type).model == "gpt-oss:20b"
+        # gpt-oss-20b-32k, not the plain gpt-oss:20b you `ollama pull` -- a
+        # locally-created long-context variant (see configs/models_ollama.yaml).
+        assert config.for_call(call_type).model == "gpt-oss-20b-32k"
 
 
 def test_resolve_model_config_anthropic_still_tiers_haiku_and_sonnet():

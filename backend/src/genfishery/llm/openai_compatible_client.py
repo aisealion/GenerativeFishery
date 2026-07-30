@@ -3,16 +3,23 @@ endpoint -- a self-hosted LiteLLM proxy (routing to e.g. GPT-5.4) or a local
 Ollama server (both speak the same `/chat/completions` + tool-calling API),
 selected via `LLM_PROVIDER` in `genfishery.llm.provider`.
 
-Retries up to `_MAX_ATTEMPTS` times on a missing tool call or a schema
-validation failure, feeding the error back to the model before trying again.
-Local/smaller models (e.g. Ollama's gpt-oss, a reasoning model that can blow
-through a tight max_tokens budget on chain-of-thought before ever emitting a
-tool call, or return a number outside a JSON schema's min/max bounds) are
-meaningfully less reliable at structured output than a frontier model, and
-one bad response shouldn't crash the whole round. This still never
-improvises a substitute answer (build spec §0/§2) -- it only gives the model
-more chances to produce a schema-conforming one; the final attempt's failure
-is raised exactly as before if every attempt fails.
+Retries up to `_MAX_ATTEMPTS` times on a missing tool call, a schema
+validation failure, or a 5xx from the provider itself, feeding the error
+back to the model before trying again. Local/smaller models (e.g. Ollama's
+gpt-oss, a reasoning model that can blow through a tight max_tokens budget on
+chain-of-thought before ever emitting a tool call, or return a number outside
+a JSON schema's min/max bounds) are meaningfully less reliable at structured
+output than a frontier model, and one bad response shouldn't crash the whole
+round. The 5xx case is a distinct failure mode confirmed in practice with
+Ollama + gpt-oss: a sufficiently long answer runs out of max_tokens mid-way
+through the tool call's JSON string, and Ollama's own tool-call construction
+fails server-side with a 500 ("unexpected end of JSON input") rather than
+returning a normal completion with a missing/malformed tool call -- so it
+never reaches this client's own tool-call/JSON checks below at all, and
+needs its own retry path. This still never improvises a substitute answer
+(build spec §0/§2) -- it only gives the model more chances to produce a
+schema-conforming one; the final attempt's failure is raised exactly as
+before if every attempt fails.
 """
 
 import json
@@ -63,14 +70,31 @@ class OpenAICompatibleLLMClient:
 
         last_error = LLMStructuredCallError(f"{call_type}: no attempts succeeded")
         for _ in range(_MAX_ATTEMPTS):
-            response = await self._client.chat.completions.create(
-                model=params.model,
-                max_tokens=params.max_tokens,
-                temperature=params.temperature,
-                messages=messages,
-                tools=tools,
-                tool_choice={"type": "function", "function": {"name": _TOOL_NAME}},
-            )
+            try:
+                response = await self._client.chat.completions.create(
+                    model=params.model,
+                    max_tokens=params.max_tokens,
+                    temperature=params.temperature,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice={"type": "function", "function": {"name": _TOOL_NAME}},
+                )
+            except openai.InternalServerError as exc:
+                # The provider itself failed constructing the tool call server-side
+                # (confirmed cause with Ollama + gpt-oss: max_tokens cut the answer
+                # off mid-JSON-string) -- never reaches the tool-call/JSON checks
+                # below, so it needs its own retry path, nudging toward brevity
+                # since a too-long answer is what triggers this.
+                last_error = LLMStructuredCallError(
+                    f"{call_type}: provider returned {exc.status_code} while generating a response: {exc}"
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "That failed -- keep your answer much shorter this time, then call the tool.",
+                    }
+                )
+                continue
 
             message = response.choices[0].message
             tool_calls = message.tool_calls or []
