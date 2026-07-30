@@ -25,58 +25,64 @@
 # `finish_reason='length'` with no tool call at all (see
 # OpenAICompatibleLLMClient's retry-with-feedback loop, which helps recover
 # from an occasional bad response but can't fix a budget that's always
-# too small).
+# too small -- retrying into the same too-small budget just fails the same
+# way again, confirmed in practice for norm_compiler at the old 1024).
+# Every budget below is at least 2048 for this reason, even for call types
+# that haven't been observed failing yet -- the reasoning overhead isn't
+# specific to any one call type, so there's no reason to expect the ones
+# still at a smaller value to be safe, only that they haven't come up yet.
 calls:
   effort_decision:
     model: gpt-oss-20b-32k
-    max_tokens: 1024
+    max_tokens: 2048
     temperature: 1.0
   vote:
     model: gpt-oss-20b-32k
-    # 2048, not the usual 1024 -- the vote itself is a short ballot id, but
-    # gpt-oss spends tokens on chain-of-thought before emitting the tool
-    # call, so this stays generous.
     max_tokens: 2048
     temperature: 1.0
   election_decision:
     model: gpt-oss-20b-32k
-    max_tokens: 1024
+    max_tokens: 2048
     temperature: 1.0
   importance_rating:
     model: gpt-oss-20b-32k
-    max_tokens: 512
+    max_tokens: 2048
     temperature: 0.0
   disclosure:
     model: gpt-oss-20b-32k
-    max_tokens: 1024
+    max_tokens: 2048
     temperature: 1.0
   proposal:
     model: gpt-oss-20b-32k
-    # 3072, not the usual 1024 -- fills personal_norm + community_proposal,
-    # on top of gpt-oss's own reasoning overhead. This is the call type most
-    # likely to hit finish_reason='length' with no tool call at all if
-    # underfunded.
+    # 3072 -- fills personal_norm + community_proposal, on top of gpt-oss's
+    # own reasoning overhead.
     max_tokens: 3072
     temperature: 1.0
   councillor_reply:
     model: gpt-oss-20b-32k
-    # 4096, not the usual 1024/2048 -- confirmed in practice that gpt-oss
-    # tends toward long, discursive answers in this back-and-forth
-    # (economic-reasoning-style paragraphs, not a short reply), and a
-    # too-tight budget here doesn't just truncate cleanly -- it can cut the
-    # tool call's JSON off mid-string, which Ollama itself then fails to
-    # parse server-side (see OpenAICompatibleLLMClient's 5xx retry path).
+    # 4096 -- confirmed in practice that gpt-oss tends toward long,
+    # discursive answers in this back-and-forth (economic-reasoning-style
+    # paragraphs, not a short reply), and a too-tight budget here doesn't
+    # just truncate cleanly -- it can cut the tool call's JSON off
+    # mid-string, which Ollama itself then fails to parse server-side (see
+    # OpenAICompatibleLLMClient's 5xx retry path).
     max_tokens: 4096
     temperature: 1.0
   monitor_review:
     model: gpt-oss-20b-32k
-    max_tokens: 512
+    max_tokens: 2048
     temperature: 1.0
   reflection:
     model: gpt-oss-20b-32k
-    max_tokens: 1024
+    max_tokens: 3072
     temperature: 1.0
   norm_compiler:
     model: gpt-oss-20b-32k
-    max_tokens: 1024
+    # 4096, not the old 1024 -- confirmed in practice that 1024 fails
+    # outright (finish_reason='length', no tool call, on all 3 retries,
+    # since retrying into the same too-small budget doesn't help). Extracting
+    # potentially multiple primitives out of a compound policy is one of the
+    # more involved structured-output tasks here, on top of the usual
+    # reasoning overhead.
+    max_tokens: 4096
     temperature: 0.0
