@@ -25,7 +25,7 @@ Backend:
 
 export FISHERY_CONFIGS=live_demo_a.yaml
 cd backend && uv run uvicorn genfishery.api.app:app --port 8000
-(comma-separate for multiple, e.g. FISHERY_CONFIGS=live_demo_a.yaml,live_demo_b.yaml — that's also the default when unset). With only one fishery, there's no migration counterpart, so migration just never triggers — everything else works the same.
+(this is also the default when FISHERY_CONFIGS is unset — single fishery, no migration counterpart. Comma-separate for multiple, e.g. FISHERY_CONFIGS=live_demo_a.yaml,live_demo_b.yaml to run two fisheries with migration linking.)
 
 Fishery councillor (optional): after each agent proposes a norm, they discuss
 how to operationalize it with the fishery councillor — a real `opencode`

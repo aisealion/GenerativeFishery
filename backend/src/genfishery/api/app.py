@@ -37,7 +37,7 @@ from genfishery.memory.registry import MemoryBankRegistry
 from genfishery.sim.events_sink import PostgresEventSink
 
 CONFIGS_DIR = Path(__file__).resolve().parents[3] / "configs"
-DEFAULT_DEMO_CONFIG_NAMES = ["live_demo_a.yaml", "live_demo_b.yaml"]
+DEFAULT_DEMO_CONFIG_NAMES = ["live_demo_a.yaml"]
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +49,11 @@ def _load_fishery_config(filename: str) -> FisheryConfig:
 
 def _load_default_demo_configs() -> list[FisheryConfig]:
     """Which fishery YAML files to load, when `create_app` isn't given an
-    explicit `fishery_configs` list. `FISHERY_CONFIGS` (comma-separated
-    filenames under configs/fisheries/) overrides the two-fishery default --
-    e.g. `FISHERY_CONFIGS=live_demo_a.yaml` to run just one fishery, with no
-    migration counterpart (migration linking only applies at exactly 2).
+    explicit `fishery_configs` list. Single-fishery, no migration counterpart,
+    by default. `FISHERY_CONFIGS` (comma-separated filenames under
+    configs/fisheries/) overrides this -- e.g.
+    `FISHERY_CONFIGS=live_demo_a.yaml,live_demo_b.yaml` to run two fisheries
+    with migration linking (migration linking only applies at exactly 2).
     """
     names_env = os.environ.get("FISHERY_CONFIGS")
     names = [n.strip() for n in names_env.split(",")] if names_env else DEFAULT_DEMO_CONFIG_NAMES

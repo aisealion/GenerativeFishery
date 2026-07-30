@@ -127,12 +127,12 @@ def test_fishery_configs_env_var_selects_a_single_fishery(monkeypatch):
     assert [c.fishery_id for c in configs] == ["fishery_a"]
 
 
-def test_fishery_configs_env_var_unset_defaults_to_both_fisheries(monkeypatch):
+def test_fishery_configs_env_var_unset_defaults_to_single_fishery(monkeypatch):
     from genfishery.api.app import _load_default_demo_configs
 
     monkeypatch.delenv("FISHERY_CONFIGS", raising=False)
     configs = _load_default_demo_configs()
-    assert [c.fishery_id for c in configs] == ["fishery_a", "fishery_b"]
+    assert [c.fishery_id for c in configs] == ["fishery_a"]
 
 
 def test_fishery_configs_env_var_supports_comma_separated_list(monkeypatch):
