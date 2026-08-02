@@ -2,8 +2,14 @@
 
 One Slurm job runs four long-lived processes on the same GPU node for the
 whole run: Postgres (via apptainer -- Aoraki has no Docker daemon), Ollama (in
-Otago's own apptainer container), `opencode serve` (the fishery councillor),
+Otago's own apptainer container), `opencode serve` (the fishery SE agent),
 and the FastAPI backend. The script is [`aoraki_run.slurm`](aoraki_run.slurm).
+
+Whenever the SE agent implements a round's winning norm as a real code
+change, the backend restarts itself to pick that change up -- on Aoraki, that
+means this same job queues a brand-new Slurm job (`sbatch
+--dependency=afterany:$SLURM_JOB_ID`) rather than re-execing in place, so the
+restart gets a full fresh wall-time budget. See "Restarts" below.
 
 ## One-time setup (per account, not per job)
 
@@ -47,7 +53,7 @@ ollama pull gpt-oss:20b
 ollama list
 
 # Build the long-context variant too (see "Ollama's context window" below) --
-# both genfishery's own calls and the councillor's need this, not the plain
+# both genfishery's own calls and the SE agent's need this, not the plain
 # gpt-oss:20b:
 printf 'FROM gpt-oss:20b\nPARAMETER num_ctx 32768\n' > /tmp/genfishery.Modelfile
 ollama create gpt-oss-20b-32k -f /tmp/genfishery.Modelfile
@@ -94,10 +100,33 @@ allocated path) in `aoraki_run.slurm`, then re-pull the model there — moving
 it out of home also frees that quota space back up.
 
 Clone/copy this repo somewhere on Aoraki, and make sure `opencode.json` and
-`.opencode/agent/fishery-councillor.md` are present at the repo root — that's
+`.opencode/agent/fishery-se-agent.md` are present at the repo root — that's
 where `opencode serve` looks for them when started from the repo's `$PWD`
 (the Slurm script `cd`s to `$SLURM_SUBMIT_DIR` first, so submit the job from
 the repo root).
+
+### Understand-Anything (optional, for the SE agent's implementation step)
+
+[Understand-Anything](https://github.com/Lum1104/Understand-Anything) turns
+a codebase into an interactive knowledge graph an agent can query — useful
+for the SE agent's implementation step (see
+`.opencode/agent/fishery-se-agent.md`), since it has to actually navigate
+`backend/` before editing it. Documented one-line installer, OpenCode among
+its supported platforms:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Egonex-AI/Understand-Anything/main/install.sh | bash -s opencode
+```
+
+This clones the tool and wires up OpenCode's plugin discovery for it;
+restart `opencode serve` afterwards. Once installed, `/understand` (run once,
+from the repo root) builds the graph into `.ua/knowledge-graph.json`;
+`/understand-chat`/`/understand-diff` query and update it afterward.
+**Unverified as of this writing** — like every other opencode integration
+point in this deploy setup, confirm it actually works by running the
+installer and `/understand` once yourself before relying on it. It's
+entirely optional: the SE agent works without it, just by reading files
+directly.
 
 ## Submitting a run
 
@@ -121,9 +150,32 @@ tail -f ollama-<jobid>.log        # Ollama's own banner + pull progress
 tail -f postgres-<jobid>.log      # Postgres's own startup log
 ```
 
-`backend/logs/{fishery_id}.log` and `backend/logs/{fishery_id}_councillor.log`
-get the full per-fishery prompt/response and councillor-discussion transcripts,
-same as any local run.
+`backend/logs/{fishery_id}.log` and `backend/logs/{fishery_id}_se_agent.log`
+get the full per-fishery prompt/response and SE-agent discussion/implementation
+transcripts, same as any local run.
+
+## Restarts
+
+Whenever a round's winning norm gets successfully implemented as a real code
+change (an actual git commit under `backend/`), the backend needs to restart
+so the new code actually takes effect for every fishery it runs -- see
+`sim/engine.py`'s module docstring and `api/restart.py`. On Aoraki this is
+gated by `RESTART_VIA_SLURM_SCRIPT`, which `aoraki_run.slurm` itself exports
+(pointing back at its own path) right before starting uvicorn: a restart
+queues a brand-new Slurm job (`sbatch --dependency=afterany:$SLURM_JOB_ID
+deploy/aoraki_run.slurm`) rather than re-execing within this job, so it gets
+a full fresh wall-time budget instead of eating into this job's remaining
+one. `--dependency=afterany` is a cheap safety net -- Slurm won't start the
+new job until this one has actually ended, so there's no window where two
+jobs touch the same fishery's event log concurrently. This process then
+exits; watch `squeue --me` to see the new job appear.
+
+This only works because `$PGDATA_DIR` is a stable, non-job-id-suffixed path
+(see "Postgres" below) -- the new job's Postgres has to see the exact same
+accumulated event log as this job's for the restart to actually resume
+rather than start over. State itself (round number, stock, agent payoffs,
+etc.) is reconstructed from that event log on the way back up (see
+`sim/state_replay.py`), not stored separately.
 
 ## Reaching the running API
 
@@ -170,24 +222,24 @@ rest of that SSH session.
 - **`--gres=gpu:1`** grabs any free GPU; swap in `aoraki_gpu_L40` /
   `aoraki_gpu_A100_80GB` / etc. as the `--partition` if you need a specific
   card's memory instead.
-- **Postgres is ephemeral** — it runs via `apptainer exec` driving
-  `initdb`/`postgres` directly (confirmed working this way; `--fakeroot`
-  does not work on this account), against the same
+- **Postgres persists across jobs, on purpose** — it runs via `apptainer
+  exec` driving `initdb`/`postgres` directly (confirmed working this way;
+  `--fakeroot` does not work on this account), against the same
   `timescale/timescaledb:2.17.1-pg16` image `docker-compose.yml` uses
-  locally, with a fresh data directory (`$HOME/genfishery_pgdata_<jobid>`)
-  every job, since there's no persistent `/mnt`/`/projects` storage yet.
-  That means: (1) the event-log data does *not* survive between job runs —
-  each job starts from an empty database and runs `alembic upgrade head`
-  itself to create the schema; (2) leftover
-  `$HOME/genfishery_pgdata_<jobid>` directories from old jobs are safe to
-  delete once you've pulled anything you cared about out of them; (3) once
-  `/mnt`/`/projects` access comes through, point `PGDATA_DIR` there instead,
-  for the same reason as `OLLAMA_MODELS` above, and to actually persist
-  event-log data across runs.
+  locally. `$PGDATA_DIR` (default `$HOME/genfishery_pgdata`, no job-id
+  suffix) is a *stable* path, deliberately shared across every job/restart —
+  see "Restarts" above for why: a restart queues a brand-new Slurm job, and
+  that job's Postgres has to see this job's exact same accumulated event
+  log, not an empty database. `initdb` only runs if `$PGDATA_DIR/PG_VERSION`
+  doesn't already exist, and `createdb` is allowed to fail (`|| true`) for
+  the same reason — both are safe to re-run against a directory an earlier
+  job already set up. Once `/mnt`/`/projects` access comes through, point
+  `PGDATA_DIR` there instead, for the same reason as `OLLAMA_MODELS` above.
+  If you genuinely want a fresh start, delete `$PGDATA_DIR` by hand first.
 - **Ollama's context window (confirmed as a real failure, not theoretical)**
   — Ollama defaults every model to a 4096-token context window unless a
   custom variant overrides it. In practice, `gpt-oss:20b`'s reasoning ran
-  the councillor's very first turn out of context before it ever produced
+  the SE agent's very first turn out of context before it ever produced
   an actual answer: the response came back with a `reasoning` part
   containing a fully-formed answer, but no `text` part at all, `finish:
   "unknown"`, and zero token counts — a silent failure, not a clean error.

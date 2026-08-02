@@ -46,7 +46,3 @@ calls:
     model: gpt-5.4
     max_tokens: 1024
     temperature: 1.0
-  norm_compiler:
-    model: gpt-5.4
-    max_tokens: 1024
-    temperature: 0.0

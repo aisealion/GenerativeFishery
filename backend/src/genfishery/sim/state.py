@@ -10,7 +10,6 @@ import random
 from dataclasses import dataclass, field
 
 from genfishery.config.fishery_config import FisheryConfig
-from genfishery.models.norms import NormPrimitive
 from genfishery.sim.personas import assign_personas
 
 NO_NORM_YET = "(no norm has been established yet)"
@@ -38,12 +37,6 @@ class FisheryState:
     stock: float
     round: int = 0
     agents: dict[str, AgentState] = field(default_factory=dict)
-    # No norms active by default (project decision). Every primitive
-    # (cap/declare/monitor/penalise/adjust/redistribute/assign_role/
-    # peer_observability) is inert until a community actually votes one in;
-    # the phase that would enforce it already no-ops cleanly when its
-    # primitive type isn't present in this list.
-    active_norms: list[NormPrimitive] = field(default_factory=list)
     collapsed: bool = False
     # Cause(s) of the most recent collapse ("resource_depletion",
     # "population_loss", "underharvest_death") -- set alongside `collapsed`
@@ -53,35 +46,20 @@ class FisheryState:
     # other causes remain "trigger, not necessarily terminal" per build spec
     # §7 point 6.
     collapse_reasons: list[str] = field(default_factory=list)
-    # Natural-language norm text (build spec §4/§5): tracked separately from
-    # `active_norms` (the compiled, mechanically-enforced primitives) because
-    # a norm that fails to compile is still believed/descriptive-only -- the
-    # text updates regardless of whether compilation succeeded.
+    # Natural-language text of the community's currently-adopted norm (build
+    # spec §4/§5). There's no separate compiled/mechanically-enforced form of
+    # it anymore -- how it's actually enforced is whatever code the SE agent
+    # has written into the engine for it (see `sim/engine.py`'s docstring).
     agent_norms: dict[str, str] = field(default_factory=dict)
     group_norm_text: str = NO_NORM_YET
-    # Role holders (assigned via an active AssignRolePrimitive): role_name ->
-    # agent_id. Separate from `active_norms` (which holds the AssignRole
-    # *definition*) since who currently holds a role changes over time
-    # (elections, rotation, random reassignment) without the primitive
-    # itself being recompiled.
+    # Named role -> agent_id currently holding it. General-purpose (not tied
+    # to any specific mechanic) -- available for whatever role-based norm the
+    # SE agent implements, if any; nothing writes to this by default.
     roles: dict[str, str] = field(default_factory=dict)
     # role_name -> round its rotating/random selection schedule started, so
     # the current holder is a pure function of elapsed rounds (no separate
-    # "tick" state to drift).
+    # "tick" state to drift). Same general-purpose status as `roles`.
     role_rotation_start: dict[str, int] = field(default_factory=dict)
-    # Pooled balance an active RedistributePrimitive can route penalties
-    # into (destination="communal_fund") and later redistribute out of.
-    communal_fund: float = 0.0
-    # An active AdjustPrimitive's current effective per-agent harvest
-    # ceiling, applied alongside (the tighter of the two wins) any active
-    # CapPrimitive during harvest enforcement. None until an adjust trigger
-    # first fires.
-    adjusted_quota: float | None = None
-    # NormPrimitive.id -> the raw natural-language text it was compiled from
-    # (build spec §9: UI renders active norms "from NormSpec.raw_text, not the
-    # raw JSON"). A primitive never voted on (there are none by default now)
-    # would have no entry here.
-    norm_source_text: dict[str, str] = field(default_factory=dict)
     # agent_id -> "altruistic" | "selfish", the persona type each agent was
     # initialized with (Gupta et al. Table 2) -- reference/UI data; the actual
     # behavioral effect is through `persona_descriptions`' text, stated in

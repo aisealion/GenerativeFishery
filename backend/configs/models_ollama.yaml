@@ -76,13 +76,3 @@ calls:
     model: gpt-oss-20b-32k
     max_tokens: 3072
     temperature: 1.0
-  norm_compiler:
-    model: gpt-oss-20b-32k
-    # 4096, not the old 1024 -- confirmed in practice that 1024 fails
-    # outright (finish_reason='length', no tool call, on all 3 retries,
-    # since retrying into the same too-small budget doesn't help). Extracting
-    # potentially multiple primitives out of a compound policy is one of the
-    # more involved structured-output tasks here, on top of the usual
-    # reasoning overhead.
-    max_tokens: 4096
-    temperature: 0.0

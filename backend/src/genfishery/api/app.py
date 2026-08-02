@@ -10,6 +10,8 @@ Anthropic API key or downloading the real sentence-transformers model, while
 still exercising the real Postgres event log + LISTEN/NOTIFY path end to end.
 """
 
+import asyncio
+import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator, Callable
@@ -23,12 +25,13 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from genfishery.api.notify_bridge import NotifyBridge
+from genfishery.api.restart import perform_restart
 from genfishery.api.routes import router
 from genfishery.api.runner import FisheryRunner, link_migration
 from genfishery.config.fishery_config import FisheryConfig
 from genfishery.config.model_config import ModelConfig
-from genfishery.councillor.client import CouncillorClient, HttpCouncillorClient
-from genfishery.councillor.config import build_default_councillor_client
+from genfishery.se_agent.client import HttpSEAgentClient, SEAgentClient
+from genfishery.se_agent.config import build_default_se_agent_client
 from genfishery.db.session import DEFAULT_DATABASE_URL
 from genfishery.llm.client import LLMClient
 from genfishery.llm.provider import build_default_llm_client
@@ -68,20 +71,21 @@ def create_app(
     round_interval_seconds: float = 4.0,
     embedder: Callable[[str], np.ndarray] | None = None,
     log_dir: Path | None = Path("logs"),
-    councillor_client: CouncillorClient | None = None,
+    se_agent_client: SEAgentClient | None = None,
 ) -> FastAPI:
     """`log_dir` (default "./logs", relative to wherever the process is run
     from): every prompt/response for a fishery is appended to
     `{log_dir}/{fishery_id}.log`, in call order -- see `LoggingLLMClient`.
-    Pass None to disable (tests do this, to avoid writing real files). When a
-    councillor is wired up (see `councillor_client` below), its discussion
-    transcript is logged the same way, to `{log_dir}/{fishery_id}_councillor.log`.
+    Pass None to disable (tests do this, to avoid writing real files). When an
+    SE agent is wired up (see `se_agent_client` below), its discussion
+    transcript is logged the same way, to `{log_dir}/{fishery_id}_se_agent.log`.
 
-    `councillor_client` is optional: pass one explicitly (tests, a shared
+    `se_agent_client` is optional: pass one explicitly (tests, a shared
     instance across apps), or set `OPENCODE_SERVER_URL` to have one built
-    automatically from `councillor.config.build_default_councillor_client`.
-    Leave both unset to skip the operationalization discussion entirely --
-    the default, and what every existing deployment/test does.
+    automatically from `se_agent.config.build_default_se_agent_client`.
+    Leave both unset to skip the operationalization discussion (and any
+    code-implementation step) entirely -- the default, and what every
+    existing deployment/test does.
     """
     resolved_configs = fishery_configs or _load_default_demo_configs()
 
@@ -103,17 +107,17 @@ def create_app(
         resolved_embedder = embedder or get_embedder()
         # Unlike `llm_client`, this has no always-on default: opencode is an
         # optional add-on, and most deployments (every existing test
-        # included) don't have a councillor server running. Only auto-build
+        # included) don't have an SE agent server running. Only auto-build
         # one when the deployment has explicitly opted in via
         # OPENCODE_SERVER_URL -- otherwise stay None, which
         # `run_propose_phase` treats as "skip the discussion" (see its
         # docstring), same as before this feature existed.
-        if councillor_client is not None:
-            resolved_councillor = councillor_client
+        if se_agent_client is not None:
+            resolved_se_agent = se_agent_client
         elif os.environ.get("OPENCODE_SERVER_URL"):
-            resolved_councillor = build_default_councillor_client(resolved_model_config)
+            resolved_se_agent = build_default_se_agent_client(resolved_model_config)
         else:
-            resolved_councillor = None
+            resolved_se_agent = None
 
         # A dedicated engine per app instance (not `db.session`'s
         # process-wide `@lru_cache`'d one): a background FisheryRunner task
@@ -134,6 +138,13 @@ def create_app(
         notify_bridge = NotifyBridge(database_url)
         await notify_bridge.start()
 
+        # Set by any single fishery's runner the instant its SE agent commits
+        # a winning norm as a real code change (see `runner.py`'s
+        # `on_restart_needed`) -- a restart affects every fishery this
+        # process runs, not just the one whose norm changed, so it's handled
+        # once here rather than per-runner.
+        restart_event = asyncio.Event()
+
         runners = {
             config.fishery_id: FisheryRunner(
                 config,
@@ -143,7 +154,8 @@ def create_app(
                 memory_registry,
                 round_interval_seconds=round_interval_seconds,
                 log_dir=log_dir,
-                councillor_client=resolved_councillor,
+                se_agent_client=resolved_se_agent,
+                on_restart_needed=restart_event.set,
             )
             for config in resolved_configs
         }
@@ -164,20 +176,49 @@ def create_app(
         for runner in runner_list:
             runner.start()
 
+        async def _close_se_agent_if_ours() -> None:
+            # Only close it if this lifespan built it -- a caller-supplied
+            # `se_agent_client` override (tests, a shared instance across
+            # apps) is theirs to close, not ours.
+            if se_agent_client is None and isinstance(resolved_se_agent, HttpSEAgentClient):
+                await resolved_se_agent.aclose()
+
+        async def _watch_for_restart() -> None:
+            """Waits for any runner's restart signal, then shuts down every
+            runner and this app's own infrastructure exactly like the normal
+            `finally` clause below does, and performs the actual OS-level
+            restart (see `restart.perform_restart`) -- which never returns.
+            """
+            await restart_event.wait()
+            logger.info("restart requested -- stopping runners before restarting")
+            for runner in runner_list:
+                await runner.stop()
+            await notify_bridge.stop()
+            await engine.dispose()
+            await _close_se_agent_if_ours()
+            perform_restart()
+
+        restart_watcher_task = asyncio.create_task(_watch_for_restart())
+
         app.state.runners = runners
         app.state.notify_bridge = notify_bridge
         try:
             yield
         finally:
+            # If a restart was actually triggered, `_watch_for_restart` above
+            # already did this same shutdown itself before replacing/exiting
+            # the process, and control never reaches back here. This clause
+            # only runs for an ordinary shutdown (no restart pending), where
+            # the watcher is still just waiting on `restart_event` -- cancel
+            # it rather than leaving it pending forever.
+            restart_watcher_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await restart_watcher_task
             for runner in runner_list:
                 await runner.stop()
             await notify_bridge.stop()
             await engine.dispose()
-            # Only close it if this lifespan built it -- a caller-supplied
-            # `councillor_client` override (tests, a shared instance across
-            # apps) is theirs to close, not ours.
-            if councillor_client is None and isinstance(resolved_councillor, HttpCouncillorClient):
-                await resolved_councillor.aclose()
+            await _close_se_agent_if_ours()
 
     app = FastAPI(title="GenFishery API", lifespan=lifespan)
     app.include_router(router)

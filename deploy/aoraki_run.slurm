@@ -1,7 +1,8 @@
 #!/bin/bash
 # Runs GenFishery on Aoraki: Ollama (in the university's apptainer container)
-# + opencode serve (the fishery councillor) + the FastAPI backend, all on one
-# GPU node for the duration of the job.
+# + opencode serve (the fishery SE agent) + the FastAPI backend, all on one
+# GPU node for the duration of the job. A restart (queued as a brand-new
+# Slurm job -- see api/restart.py) re-runs this exact same script.
 #
 # One-time setup before your first run -- see deploy/README.md:
 #   - install opencode:  curl -fsSL https://opencode.ai/install | bash
@@ -59,16 +60,22 @@ OLLAMA_MODEL_ID="${OLLAMA_MODEL_ID:-gpt-oss:20b}"
 # variant overrides it -- far too small for gpt-oss's reasoning to fit input
 # + chain-of-thought + a final answer, and it fails silently (a response
 # with only reasoning content, no actual answer, rather than a clear error).
-# This affects genfishery's own Ollama calls too, not just the councillor's
+# This affects genfishery's own Ollama calls too, not just the SE agent's
 # -- so both are pointed at this long-context variant (see models_ollama.yaml
 # and opencode.json), built fresh each job from whatever OLLAMA_MODEL_ID was
 # just pulled.
 OLLAMA_CTX_MODEL_ID="${OLLAMA_CTX_MODEL_ID:-gpt-oss-20b-32k}"
 
-# --- 0. Postgres, via apptainer (no Docker daemon on Aoraki). Ephemeral --
-#     data only lives for this one job, in $PGDATA_DIR below (home for now,
-#     move it to /mnt or /projects once you have access, same as
-#     OLLAMA_MODELS).
+# --- 0. Postgres, via apptainer (no Docker daemon on Aoraki). --
+#     $PGDATA_DIR (home for now, move it to /mnt or /projects once you have
+#     access, same as OLLAMA_MODELS) is a STABLE path -- deliberately not
+#     suffixed with $SLURM_JOB_ID -- because a process restart (see
+#     `sim/engine.py`'s module docstring, and `RESTART_VIA_SLURM_SCRIPT`
+#     below) queues a brand-new Slurm job rather than re-execing within this
+#     one, and that new job's Postgres has to see the exact same accumulated
+#     event history as this job's, not a fresh empty database. initdb/createdb
+#     below are therefore guarded to be safe to re-run against a directory/
+#     database an earlier job already created.
 #
 # CONFIRMED (interactively, on this account): `apptainer run --fakeroot`
 # fails outright here (not in /etc/subuid, and the container's own fakeroot
@@ -85,11 +92,16 @@ PG_SIF="${PG_SIF:-$HOME/timescaledb.sif}"
 if [ ! -f "$PG_SIF" ]; then
   apptainer pull "$PG_SIF" docker://timescale/timescaledb:2.17.1-pg16
 fi
-PGDATA_DIR="${PGDATA_DIR:-$HOME/genfishery_pgdata_$SLURM_JOB_ID}"
+PGDATA_DIR="${PGDATA_DIR:-$HOME/genfishery_pgdata}"
 mkdir -p "$PGDATA_DIR"
 
-apptainer exec --bind "$PGDATA_DIR:/pgdata" "$PG_SIF" \
-  initdb -D /pgdata -U genfishery --auth-local=trust --auth-host=trust
+# initdb only if this is genuinely the first job to ever use this directory --
+# PG_VERSION is the file Postgres itself uses to mark a data directory as
+# already initialized, so this is the same check `initdb` makes internally.
+if [ ! -f "$PGDATA_DIR/PG_VERSION" ]; then
+  apptainer exec --bind "$PGDATA_DIR:/pgdata" "$PG_SIF" \
+    initdb -D /pgdata -U genfishery --auth-local=trust --auth-host=trust
+fi
 
 apptainer exec --bind "$PGDATA_DIR:/pgdata" "$PG_SIF" \
   postgres -D /pgdata -h 127.0.0.1 -p 5432 -k /tmp > "postgres-${SLURM_JOB_ID}.log" 2>&1 &
@@ -108,8 +120,11 @@ fi
 
 # trust auth means the password in DATABASE_URL is never actually checked --
 # it just has to be present for asyncpg's URL parsing / SQLAlchemy's DSN format.
+# `|| true`: a restart's new job hits the same $PGDATA_DIR, where `genfishery`
+# already exists from the job before it -- createdb erroring on that is
+# expected and fine, not a real failure.
 apptainer exec --bind "$PGDATA_DIR:/pgdata" "$PG_SIF" \
-  createdb -h 127.0.0.1 -p 5432 -U genfishery genfishery
+  createdb -h 127.0.0.1 -p 5432 -U genfishery genfishery || true
 export DATABASE_URL="postgresql+asyncpg://genfishery:genfishery@localhost:5432/genfishery"
 echo "Postgres is up"
 
@@ -154,7 +169,7 @@ fi
 export OLLAMA_BASE_URL
 echo "Ollama's OpenAI-compatible endpoint is up at $OLLAMA_BASE_URL"
 
-# --- 2. opencode serve (the fishery councillor), pointed at the same Ollama.
+# --- 2. opencode serve (the fishery SE agent), pointed at the same Ollama.
 #     Runs directly on the node, not inside the Ollama container -- apptainer
 #     doesn't isolate the network namespace by default, so both still reach
 #     each other over localhost. ---
@@ -177,8 +192,18 @@ export OPENCODE_MODEL_ID="$OLLAMA_CTX_MODEL_ID"
 
 cd backend
 
-# PGDATA_DIR is fresh every job, so the schema doesn't exist yet either --
-# create it before the app tries to use it.
+# Idempotent either way: a brand-new $PGDATA_DIR has no schema yet, and a
+# restart's new job hitting the same $PGDATA_DIR as an earlier one already
+# has it -- alembic tracks its own applied-migrations state, so re-running
+# this against an up-to-date database is a no-op.
 uv run alembic upgrade head
+
+# Tells the backend how to actually restart itself when an SE agent commits a
+# winning norm as a real code change (see api/restart.py's module docstring):
+# queue a brand-new Slurm job depending on this one, rather than re-exec in
+# place -- a restart should get a fresh wall-time budget, not eat further
+# into this job's remaining one. This script's own path relative to the repo
+# root submitted from, so the queued job runs this exact same script again.
+export RESTART_VIA_SLURM_SCRIPT="$SLURM_SUBMIT_DIR/deploy/aoraki_run.slurm"
 
 uv run uvicorn genfishery.api.app:app --host 0.0.0.0 --port 8000

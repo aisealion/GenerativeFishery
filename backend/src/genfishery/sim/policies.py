@@ -7,10 +7,10 @@ non-LLM stand-in used only to validate the engine mechanics themselves
 framework-validation methodology (their §4.1 uses rule-based agents for
 exactly this, before any LLM is involved) -- it is never used for a real run.
 
-There is no `decide_punishment` anymore -- punishment (`PenalisePrimitive`)
-is automatic, triggered directly by violations Harvest records, not a
-per-agent "should I punish someone?" choice (project decision, see
-`models/norms.py`'s `PenalisePrimitive` docstring).
+There is no `decide_punishment` -- punishment isn't a per-agent "should I
+punish someone?" choice. Whatever enforcement a winning norm needs is
+implemented directly in the engine by the SE agent (see `sim/engine.py`'s
+module docstring), not decided per-agent here.
 """
 
 import random

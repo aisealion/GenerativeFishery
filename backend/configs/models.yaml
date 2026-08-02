@@ -3,9 +3,8 @@
 #
 # Tiering rationale: effort/vote/election/importance-rating calls happen once
 # per agent per round (high volume, low complexity) -> Haiku. Proposal,
-# monitor review, dispute resolution, reflection, and NormCompiler are
-# low-volume and higher-stakes (structured-output correctness, nuanced
-# synthesis) -> Sonnet.
+# monitor review, and reflection are low-volume and higher-stakes
+# (structured-output correctness, nuanced synthesis) -> Sonnet.
 calls:
   effort_decision:
     model: claude-haiku-4-5-20251001
@@ -43,7 +42,3 @@ calls:
     model: claude-sonnet-5
     max_tokens: 1024
     temperature: 1.0
-  norm_compiler:
-    model: claude-sonnet-5
-    max_tokens: 1024
-    temperature: 0.0

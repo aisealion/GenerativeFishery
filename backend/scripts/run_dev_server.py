@@ -15,7 +15,6 @@ from genfishery.llm.fake_client import FakeLLMClient
 from genfishery.memory.importance import ImportanceRating
 from genfishery.memory.reflection import ReflectionInsight
 from genfishery.sim.decisions import EffortDecision, ProposalDecision
-from genfishery.sim.norm_compiler import NormCompilerOutput
 
 # Deliberately harsher than live_demo_a.yaml: with every agent scripted to
 # behave identically (fixed effort, no punishment), all agents in a fishery
@@ -68,7 +67,6 @@ def make_dev_llm() -> FakeLLMClient:
             LLMCallType.VOTE: lambda response_model, system, prompt: response_model(
                 chosen_text="Fish moderately to preserve the lake."
             ),
-            LLMCallType.NORM_COMPILER: NormCompilerOutput(primitives=[]),
         }
     )
 

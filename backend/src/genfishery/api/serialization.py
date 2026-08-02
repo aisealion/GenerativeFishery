@@ -1,9 +1,9 @@
 """FisheryState -> JSON snapshot for `GET /fisheries/{id}/state` (build spec §9).
 
-Active norms render from their source natural-language text
-(`state.norm_source_text`), not raw primitive JSON, per the UI requirements --
-the raw primitive fields are included too (needed for the debug/click-through
-view), but `source_text` is what a normal panel shows.
+There's no compiled primitive list anymore -- a winning norm is implemented
+as an actual code change to the simulation by the SE agent (see
+`sim/engine.py`'s module docstring), not a structured primitive. The current
+norm is just its adopted natural-language text, `group_norm_text`.
 """
 
 from typing import Any
@@ -35,13 +35,4 @@ def serialize_state(state: FisheryState) -> dict[str, Any]:
         "group_norm_text": state.group_norm_text,
         "roles": state.roles,
         "agents": [serialize_agent(state, agent_id) for agent_id in state.agents],
-        "active_norms": [
-            {
-                "id": primitive.id,
-                "type": primitive.type,
-                "source_text": state.norm_source_text.get(primitive.id),
-                "detail": primitive.model_dump(),
-            }
-            for primitive in state.active_norms
-        ],
     }

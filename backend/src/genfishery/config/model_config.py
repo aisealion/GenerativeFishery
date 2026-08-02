@@ -2,9 +2,9 @@
 
 The simulation makes many high-volume, low-complexity structured-output calls
 (one effort decision per agent per round) alongside far fewer, higher-stakes
-calls (reflection synthesis, NormCompiler). `models.yaml` maps each call type to
-a model id + sampling params; defaults below tier cheap/high-volume calls to
-Haiku and quality-sensitive/low-volume calls to Sonnet, but every entry can be
+calls (reflection synthesis). `models.yaml` maps each call type to a model id
++ sampling params; defaults below tier cheap/high-volume calls to Haiku and
+quality-sensitive/low-volume calls to Sonnet, but every entry can be
 overridden per deployment without a code change.
 """
 
@@ -25,7 +25,6 @@ class LLMCallType(StrEnum):
     DISCLOSURE = "disclosure"
     IMPORTANCE_RATING = "importance_rating"
     REFLECTION = "reflection"
-    NORM_COMPILER = "norm_compiler"
 
 
 class ModelParams(BaseModel):
@@ -57,7 +56,6 @@ _DEFAULTS: dict[LLMCallType, ModelParams] = {
     LLMCallType.COUNCILLOR_REPLY: ModelParams(model=HAIKU, max_tokens=1024, temperature=1.0),
     LLMCallType.MONITOR_REVIEW: ModelParams(model=SONNET, max_tokens=512, temperature=1.0),
     LLMCallType.REFLECTION: ModelParams(model=SONNET, max_tokens=1024, temperature=1.0),
-    LLMCallType.NORM_COMPILER: ModelParams(model=SONNET, max_tokens=1024, temperature=0.0),
 }
 
 

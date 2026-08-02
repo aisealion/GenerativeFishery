@@ -3,20 +3,30 @@
 `InMemoryEventSink` is for tests and the (non-persisted) validation sweeps.
 `PostgresEventSink` is the real sink -- it inserts into the `events`
 hypertable, which fires the `events_notify` trigger (LISTEN/NOTIFY) in the
-same transaction as the insert.
+same transaction as the insert. Both also implement `list_events`, used by
+`sim/state_replay.py` to reconstruct a fishery's state on startup by
+replaying its own event history.
 """
 
+import logging
 from typing import Protocol
 
-from sqlalchemy import insert
+from pydantic import ValidationError
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from genfishery.db.tables import events_table
 from genfishery.models.events import Event
 
+logger = logging.getLogger(__name__)
+
 
 class EventSink(Protocol):
     async def record(self, event: Event) -> Event: ...
+
+
+class EventReader(Protocol):
+    async def list_events(self, fishery_id: str) -> list[Event]: ...
 
 
 class InMemoryEventSink:
@@ -26,6 +36,9 @@ class InMemoryEventSink:
     async def record(self, event: Event) -> Event:
         self.events.append(event)
         return event
+
+    async def list_events(self, fishery_id: str) -> list[Event]:
+        return [e for e in self.events if e.fishery_id == fishery_id]
 
 
 class RoundEventCollector:
@@ -75,3 +88,52 @@ class PostgresEventSink:
             )
             row = result.one()
         return event.model_copy(update={"id": row.id, "created_at": row.created_at})
+
+    async def list_events(self, fishery_id: str) -> list[Event]:
+        """All of this fishery's events, oldest first -- `id` is a BIGSERIAL
+        assigned in insert order, so it's the reliable tiebreaker for events
+        recorded within the same `created_at` timestamp.
+
+        The event vocabulary (`EventType`) evolves over time -- old rows can
+        carry a `type` string a later schema revision has since removed
+        (build spec §8's log is append-only; it never gets rewritten when the
+        code that once wrote a given event type is deleted). Skips such a row
+        with a warning rather than failing this whole read -- important here
+        specifically because `sim/state_replay.py` calls this on every
+        restart, and one stale row must never be able to crash a fishery's
+        entire startup.
+        """
+        async with self._sessionmaker() as session:
+            result = await session.execute(
+                select(events_table)
+                .where(events_table.c.fishery_id == fishery_id)
+                .order_by(events_table.c.id)
+            )
+            rows = result.all()
+        events = []
+        for row in rows:
+            try:
+                events.append(
+                    Event(
+                        id=row.id,
+                        fishery_id=row.fishery_id,
+                        round=row.round,
+                        phase=row.phase,
+                        type=row.type,
+                        actor_id=row.actor_id,
+                        target_id=row.target_id,
+                        visibility=row.visibility,
+                        payload=row.payload,
+                        created_at=row.created_at,
+                    )
+                )
+            except ValidationError:
+                logger.warning(
+                    "skipping event id=%s fishery_id=%s with a type/visibility "
+                    "no longer recognized by the current schema: type=%r",
+                    row.id,
+                    fishery_id,
+                    row.type,
+                    exc_info=True,
+                )
+        return events

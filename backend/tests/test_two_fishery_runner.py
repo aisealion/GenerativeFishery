@@ -12,7 +12,6 @@ from genfishery.memory.importance import ImportanceRating
 from genfishery.memory.registry import MemoryBankRegistry
 from genfishery.sim.decisions import EffortDecision, ProposalDecision
 from genfishery.sim.events_sink import InMemoryEventSink
-from genfishery.sim.norm_compiler import NormCompilerOutput
 from tests.conftest import fake_embedder
 
 
@@ -56,7 +55,6 @@ def make_llm() -> FakeLLMClient:
             LLMCallType.IMPORTANCE_RATING: ImportanceRating(score=1.0),
             LLMCallType.PROPOSAL: ProposalDecision(personal_norm="ok", community_proposal="Carry on."),
             LLMCallType.VOTE: lambda response_model, system, prompt: response_model(chosen_id="1"),
-            LLMCallType.NORM_COMPILER: NormCompilerOutput(primitives=[]),
         }
     )
 

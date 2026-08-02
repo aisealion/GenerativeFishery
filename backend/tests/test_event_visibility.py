@@ -6,7 +6,7 @@ def make_event(**overrides) -> Event:
         fishery_id="f",
         round=1,
         phase="p",
-        type=EventType.CAP_EXCEEDED,
+        type=EventType.HARVEST_RESOLVED,
         visibility=Visibility.PUBLIC,
         payload={},
     )

@@ -2,11 +2,9 @@ import pytest
 
 from genfishery.config.fishery_config import FisheryConfig
 from genfishery.models.events import EventType
-from genfishery.models.norms import CapPrimitive, PenalisePrimitive
 from genfishery.sim.engine import (
     check_fishery_collapse,
     run_harvest_phase,
-    run_penalise_phase,
     run_simulation,
     run_starvation_check,
     run_strategy_phase,
@@ -40,12 +38,6 @@ def make_config(**overrides) -> FisheryConfig:
     )
     defaults.update(overrides)
     return FisheryConfig(**defaults)
-
-
-def test_default_active_norms_is_empty_every_primitive_is_opt_in():
-    state = FisheryState.initial(make_config())
-    assert state.active_norms == []
-    assert state.round == 0
 
 
 async def test_harvest_and_regrowth_match_gupta_equations():
@@ -83,63 +75,6 @@ async def test_harvest_never_drives_stock_negative():
 
     harvest_events = [e for e in events.events if e.type == EventType.HARVEST_RESOLVED]
     assert harvest_events[0].payload["post_harvest_stock"] == 0.0
-
-
-async def test_harvest_phase_clips_catch_to_an_active_cap_and_records_a_violation():
-    config = make_config(alpha=1.0, initial_stock=10.0, consumption=0.0)
-    state = FisheryState.initial(config)
-    state.active_norms.append(
-        CapPrimitive(id="cap1", scope="individual", basis="fixed_units", value=2.0)
-    )
-    state.agents["a1"].last_effort = 0.5  # requested = 1.0*0.5*10.0 = 5.0
-    state.agents["a2"].last_effort = 0.0
-    state.agents["a3"].last_effort = 0.0
-    events = InMemoryEventSink()
-
-    violations = await run_harvest_phase(state, events)
-
-    assert state.agents["a1"].last_harvest == pytest.approx(2.0)  # clipped, not the requested 5.0
-    assert violations["a1"] == [{"trigger": "exceed_cap", "excess": pytest.approx(3.0)}]
-    cap_event = next(e for e in events.events if e.type == EventType.CAP_EXCEEDED)
-    assert cap_event.actor_id == "a1"
-    assert cap_event.payload["observed"] == pytest.approx(5.0)
-    assert cap_event.payload["cap_value"] == pytest.approx(2.0)
-
-
-async def test_penalise_resolves_before_starvation_and_can_cause_it():
-    """Exercises the actual round-order guarantee: an automatic penalty from
-    Harvest's own cap violation must land before the starvation check, same
-    as any other payoff-affecting phase.
-    """
-    config = make_config(consumption=0.0, alpha=1.0, initial_stock=10.0)
-    state = FisheryState.initial(config)
-    state.active_norms = [
-        CapPrimitive(id="cap1", scope="individual", basis="fixed_units", value=2.0),
-        PenalisePrimitive(
-            id="pen1", scope="collective", trigger="exceed_cap", penalty_type="forfeit", destination="pool"
-        ),
-    ]
-    state.agents["a1"].last_effort = 0.5  # requested = 5.0, capped to 2.0, excess = 3.0
-    state.agents["a2"].last_effort = 0.0
-    state.agents["a3"].last_effort = 0.0
-    state.agents["a1"].payoff = -1.0  # would go to -2.0 once the forfeit lands
-
-    events = InMemoryEventSink()
-    violations = await run_harvest_phase(state, events)
-    assert state.agents["a1"].payoff == pytest.approx(-1.0 + 2.0)  # capped harvest applied
-
-    await run_penalise_phase(state, events, violations)
-    assert state.agents["a1"].payoff == pytest.approx(1.0 - 3.0)  # excess forfeited
-
-    await run_starvation_check(state, events)
-    assert state.agents["a1"].alive is False
-    starved = [e for e in events.events if e.type == EventType.AGENT_STARVED]
-    assert len(starved) == 1
-    assert starved[0].target_id == "a1"
-    # a1's payoff was still non-negative right after harvest -- the penalty
-    # is what tipped them into starvation, not underharvest.
-    assert starved[0].payload["reason"] == "punished"
-    assert state.starvation_reasons["a1"] == "punished"
 
 
 async def test_starvation_from_underharvest_alone_is_labeled_underharvest():
@@ -252,30 +187,3 @@ async def test_single_underharvest_death_collapses_even_with_population_and_stoc
     collapse_event = next(e for e in events.events if e.type == EventType.FISHERY_COLLAPSED)
     assert collapse_event.payload["reasons"] == ["underharvest_death"]
     assert collapse_event.payload["n_alive"] == 2  # a2/a3 still alive -- not a population-floor collapse
-
-
-async def test_penalise_caused_death_does_not_trigger_underharvest_collapse():
-    """Explicit project requirement: a penalty-caused starvation must not, by
-    itself, collapse the fishery -- only underharvest deaths do."""
-    config = make_config(consumption=0.0, alpha=1.0, initial_stock=10.0, r_min=0.0, n_min=1)
-    state = FisheryState.initial(config)
-    state.active_norms = [
-        CapPrimitive(id="cap1", scope="individual", basis="fixed_units", value=2.0),
-        PenalisePrimitive(
-            id="pen1", scope="collective", trigger="exceed_cap", penalty_type="forfeit", destination="pool"
-        ),
-    ]
-    state.agents["a1"].last_effort = 0.5  # requested = 5.0, capped to 2.0, excess = 3.0
-    state.agents["a2"].last_effort = 0.0
-    state.agents["a3"].last_effort = 0.0
-    state.agents["a1"].payoff = 0.5  # survives harvest alone (0.5+2.0=2.5), not the forfeit
-
-    events = InMemoryEventSink()
-    violations = await run_harvest_phase(state, events)
-    await run_penalise_phase(state, events, violations)
-    had_underharvest_death = await run_starvation_check(state, events)
-
-    assert state.agents["a1"].alive is False
-    assert state.starvation_reasons["a1"] == "punished"
-    assert had_underharvest_death is False
-    assert check_fishery_collapse(state, underharvest_death_this_round=had_underharvest_death) is False

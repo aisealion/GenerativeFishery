@@ -8,7 +8,6 @@ from genfishery.config.fishery_config import FisheryConfig
 from genfishery.config.model_config import LLMCallType, ModelConfig
 from genfishery.llm.fake_client import FakeLLMClient
 from genfishery.memory.registry import MemoryBankRegistry
-from genfishery.models.norms import PeerObservability
 from genfishery.sim.decisions import EffortDecision
 from genfishery.sim.policies import LLMDecisionSource
 from genfishery.sim.state import FisheryState
@@ -47,26 +46,9 @@ async def test_prompt_states_viewer_identity_and_defaults_to_own_observations_on
     assert "You are villager a2" in prompt
     assert "a2 (you)" in prompt
     # The roster still names a1 (identity/alive-status is always visible),
-    # but no PeerObservability primitive is active, so their effort/payoff
-    # numbers are not disclosed by default.
+    # but their effort/payoff numbers are never disclosed to anyone else.
     assert "a1: active" in prompt
     assert "a1: effort=" not in prompt and "a1 (you)" not in prompt
-
-
-async def test_peer_observability_primitive_reveals_other_villagers_observations():
-    state = FisheryState.initial(make_config())
-    for agent in state.agents.values():
-        agent.last_effort = 0.2
-    state.active_norms.append(PeerObservability(id="po1"))
-    llm = make_llm()
-    decisions = LLMDecisionSource(llm, ModelConfig.default())
-
-    await decisions.decide_effort("a2", state)
-
-    prompt = llm.calls[-1][2]
-    assert "a2 (you)" in prompt
-    # Other agents appear without the "(you)" marker.
-    assert "a1:" in prompt and "a1 (you)" not in prompt
 
 
 async def test_roster_block_always_names_every_agent_and_marks_removed_ones():

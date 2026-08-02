@@ -1,9 +1,9 @@
 """LLM client interface (build spec §0, §2).
 
-Every agent decision and the NormCompiler go through `structured_call`: it
-always returns a validated instance of a fixed pydantic model, never free text.
-There is exactly one implementation surface here -- `AnthropicLLMClient` for
-real runs, `FakeLLMClient` for tests -- so application code never talks to the
+Every agent decision goes through `structured_call`: it always returns a
+validated instance of a fixed pydantic model, never free text. There is
+exactly one implementation surface here -- `AnthropicLLMClient` for real
+runs, `FakeLLMClient` for tests -- so application code never talks to the
 Anthropic SDK directly and never parses free-form text into behavior.
 """
 
@@ -19,9 +19,9 @@ T = TypeVar("T", bound=BaseModel)
 class LLMStructuredCallError(RuntimeError):
     """Raised when a call doesn't yield a valid, schema-conforming response.
 
-    Callers must not catch this to improvise a substitute answer -- the one
-    sanctioned reaction is what NormCompiler does: log the failure as data
-    (`could_not_compile`) and treat the input as descriptive-only.
+    Callers must not catch this to improvise a substitute answer -- e.g. the
+    memory-write phase logs the failure and skips that one memory rather than
+    fabricating content (see `sim.engine.run_memory_write_phase`).
     """
 
 
@@ -38,6 +38,6 @@ class LLMClient(Protocol):
 
         Implementations must never fall back to free-text parsing or improvise
         a response on schema-validation failure -- they raise, and the caller
-        decides how to handle it (e.g. NormCompiler logs `could_not_compile`).
+        decides how to handle it.
         """
         ...

@@ -10,12 +10,10 @@ explicit identity too) and, when memories are supplied, a retrieved-memories
 block (build spec §3's retrieval score feeding back into the next decision,
 Smallville-style -- see `policies.LLMDecisionSource` for the retrieval side).
 
-The observations block only shows a villager their own effort/payoff by
-default. It expands to show every villager's effort/payoff once a
-`PeerObservability` primitive is active -- i.e. only once the community has
-proposed and voted in a transparency norm that the NormCompiler compiled to
-that primitive, same opt-in pattern every primitive uses (inert until
-actually voted in).
+The observations block only ever shows a villager their own effort/payoff --
+there's no structured "transparency norm" mechanism anymore (see
+`sim/engine.py`'s module docstring on why); an SE-agent-implemented norm that
+wants to change what's visible would do so directly in code.
 
 Each villager states two distinct things in the preamble: a fixed
 "personality" (Gupta et al. Table 2 -- `state.persona_descriptions`, set once
@@ -26,7 +24,7 @@ disposition silently vanishes from the prompt the moment they revise their
 own stated strategy.
 
 The roster block lists every villager who has ever been in this fishery by
-name, unconditionally (independent of PeerObservability): "active" if alive,
+name, unconditionally: "active" if alive,
 or "removed (underharvest)"/"removed (punished)" if they starved --
 `state.starvation_reasons`, set once by `run_starvation_check` based on
 whether their payoff was already negative right after harvest (underharvest)
@@ -64,16 +62,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, create_model
 
-from genfishery.models.norms import (
-    AdjustPrimitive,
-    AssignRolePrimitive,
-    CapPrimitive,
-    DeclarePrimitive,
-    MonitorPrimitive,
-    PeerObservability,
-    PenalisePrimitive,
-    RedistributePrimitive,
-)
 from genfishery.sim.state import NO_NORM_YET, FisheryState
 
 __all__ = [
@@ -133,10 +121,6 @@ class NominationDecision(BaseModel):
     self_nominate: bool = Field(description="Whether you nominate/volunteer yourself for the role.")
 
 
-def _has_peer_observability(state: FisheryState) -> bool:
-    return any(isinstance(p, PeerObservability) for p in state.active_norms)
-
-
 # How many rounds a migrated-in agent is tagged as a newcomer in the roster
 # block before folding back into a plain "active" entry.
 NEWCOMER_ROUND_WINDOW = 5
@@ -159,7 +143,7 @@ def _roster_block(state: FisheryState, viewer_id: str) -> str:
 
 
 def _observations_block(state: FisheryState, viewer_id: str) -> str:
-    agents = state.alive_agents if _has_peer_observability(state) else [state.agents[viewer_id]]
+    agents = [state.agents[viewer_id]]
     lines = []
     for agent in agents:
         marker = " (you)" if agent.agent_id == viewer_id else ""
@@ -173,61 +157,23 @@ def _observations_block(state: FisheryState, viewer_id: str) -> str:
 
 
 def active_norms_summary(state: FisheryState) -> str:
-    """One plain-fisherman-language line per currently active norm primitive
-    -- the "how this fishery currently works" grounding fed to the fishery
-    councillor, in the same domain vocabulary `norm_compiler.py`'s extraction
-    prompt already uses for humans, never the primitive's own type/field names.
+    """The "how this fishery currently works" grounding fed to the fishery
+    SE agent -- just the community's currently-adopted norm text. There's no
+    structured primitive breakdown anymore (see `sim/engine.py`'s module
+    docstring): how a norm is actually enforced is whatever code the SE
+    agent has itself written into the engine for it, which it already knows
+    since it wrote it.
     """
-    if not state.active_norms:
+    if state.group_norm_text == NO_NORM_YET:
         return "No formal rules are in place yet -- villagers fish under their own personal strategies only."
-
-    lines = []
-    for norm in state.active_norms:
-        if isinstance(norm, CapPrimitive):
-            lines.append(
-                f"- A catch limit is in place: {norm.basis.replace('_', ' ')} of {norm.value}, "
-                f"applied {norm.cap_scope.replace('_', ' ')}."
-            )
-        elif isinstance(norm, DeclarePrimitive):
-            lines.append(
-                f"- Villagers must publicly state their {norm.content.replace('_', ' ')} "
-                f"{norm.timing.replace('_', ' ')}, visible {norm.disclosure_visibility.replace('_', ' ')}."
-            )
-        elif isinstance(norm, MonitorPrimitive):
-            lines.append(
-                f"- Compliance is checked via {norm.method.replace('_', ' ')}, {norm.frequency.replace('_', ' ')}."
-            )
-        elif isinstance(norm, PenalisePrimitive):
-            lines.append(
-                f"- Anyone who triggers {norm.trigger.replace('_', ' ')} is automatically "
-                f"{norm.penalty_type.replace('_', ' ')}."
-            )
-        elif isinstance(norm, AdjustPrimitive):
-            lines.append(
-                f"- The {norm.adjust_target.replace('_', ' ')} is automatically "
-                f"{norm.direction.replace('_', ' ')}d on {norm.trigger.replace('_', ' ')}."
-            )
-        elif isinstance(norm, RedistributePrimitive):
-            lines.append(
-                f"- Forfeited or collected fish get redistributed to {norm.destination.replace('_', ' ')} "
-                f"on {norm.trigger.replace('_', ' ')}."
-            )
-        elif isinstance(norm, AssignRolePrimitive):
-            lines.append(f"- There's a {norm.role_name.replace('_', ' ')} role, chosen by {norm.selection}.")
-        elif isinstance(norm, PeerObservability):
-            lines.append("- Everyone's fishing effort and earnings are visible to the whole community.")
-    return "\n".join(lines)
+    return f'- The community\'s current policy is: "{state.group_norm_text}"'
 
 
 def _preamble(
     state: FisheryState, viewer_id: str, agent_norm: str, group_norm: str, memories: str = ""
 ) -> str:
     memory_block = f"\n\nRelevant memories from your past experience:\n{memories}" if memories else ""
-    observations_label = (
-        "You observe each villager's fishing effort and total payoff:"
-        if _has_peer_observability(state)
-        else "Your own fishing effort and total payoff so far:"
-    )
+    observations_label = "Your own fishing effort and total payoff so far:"
     persona_description = state.persona_descriptions.get(viewer_id)
     personality_block = f'\n\nYour personality: "{persona_description}"' if persona_description else ""
     return f"""You are villager {viewer_id}, one of several villagers who fish from a shared lake

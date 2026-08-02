@@ -33,32 +33,11 @@ def render_event_as_observation(event: Event, viewer_id: str) -> str | None:
             f"{payload['regrown_stock']:.2f}."
         )
 
-    if event.type == EventType.CAP_EXCEEDED:
-        who = "I" if event.actor_id == viewer_id else (event.actor_id or "The community")
-        return (
-            f"{who} exceeded the agreed catch limit this round "
-            f"(caught {payload['observed']:.2f}, limit {payload['cap_value']:.2f})."
-        )
-
     if event.type == EventType.PENALTY_APPLIED:
         cause = f"exceeding the {payload['trigger'].replace('_', ' ')} rule"
         if event.target_id == viewer_id:
             return f"I was penalised {payload['amount']:.2f} for {cause}."
         return f"{event.target_id} was penalised {payload['amount']:.2f} for {cause}."
-
-    if event.type == EventType.QUOTA_ADJUSTED:
-        return (
-            f"The community's {payload['adjust_target'].replace('_', ' ')} was "
-            f"{payload['direction']}d by {payload['value']:.2f}."
-        )
-
-    if event.type == EventType.REDISTRIBUTION_APPLIED:
-        my_delta = payload.get("per_agent_deltas", {}).get(viewer_id)
-        if my_delta:
-            return f"I received {my_delta:.2f} from a redistribution ({payload['total_amount']:.2f} total)."
-        if payload.get("per_agent_deltas"):
-            return f"The community redistributed {payload['total_amount']:.2f} among villagers."
-        return f"{payload['total_amount']:.2f} was redistributed to the {payload['destination']}."
 
     if event.type == EventType.MONITOR_REVIEW:
         who = "I was" if event.actor_id == viewer_id else f"{event.actor_id} was"
@@ -100,10 +79,13 @@ def render_event_as_observation(event: Event, viewer_id: str) -> str | None:
         return f'I told the fishery counsellor: "{payload["message"]}"'
 
     if event.type == EventType.NORM_ADOPTED:
-        return f'The community adopted a new policy: "{payload["raw_text"]}"'
+        return f'The community adopted a new policy: "{payload["community_proposal"]}"'
 
-    if event.type == EventType.NORM_COULD_NOT_COMPILE:
-        return f'The community tried to adopt "{payload["raw_text"]}" but it could not be formalized.'
+    if event.type == EventType.NORM_IMPLEMENTED:
+        return "The new policy is now in effect -- the fishery council has put it into practice."
+
+    if event.type == EventType.NORM_IMPLEMENTATION_FAILED:
+        return "The fishery council is still working out how to put the new policy into practice."
 
     if event.type == EventType.ROLE_ELECTION_CALLED:
         return f"An election was called for the role of {payload['role_name']}."

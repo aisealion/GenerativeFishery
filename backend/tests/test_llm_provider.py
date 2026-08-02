@@ -25,7 +25,7 @@ def test_resolve_model_config_ollama_covers_every_call_type_with_local_model():
 def test_resolve_model_config_anthropic_still_tiers_haiku_and_sonnet():
     config = resolve_model_config("anthropic")
     assert config.for_call(LLMCallType.EFFORT_DECISION).model == "claude-haiku-4-5-20251001"
-    assert config.for_call(LLMCallType.NORM_COMPILER).model == "claude-sonnet-5"
+    assert config.for_call(LLMCallType.REFLECTION).model == "claude-sonnet-5"
 
 
 def test_resolve_model_config_unknown_provider_raises():

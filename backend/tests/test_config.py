@@ -11,7 +11,7 @@ CONFIGS_DIR = Path(__file__).resolve().parents[1] / "configs"
 def test_default_model_config_tiers_high_volume_calls_to_haiku():
     config = ModelConfig.default()
     assert config.for_call(LLMCallType.EFFORT_DECISION).model == HAIKU
-    assert config.for_call(LLMCallType.NORM_COMPILER).model == SONNET
+    assert config.for_call(LLMCallType.REFLECTION).model == SONNET
 
 
 def test_load_model_config_from_repo_yaml_matches_defaults():
@@ -28,7 +28,7 @@ def test_load_model_config_partial_override_falls_back_for_rest(tmp_path):
     config = load_model_config(override)
     assert config.for_call(LLMCallType.EFFORT_DECISION).model == "claude-sonnet-5"
     # Untouched call types keep their built-in defaults.
-    assert config.for_call(LLMCallType.NORM_COMPILER).model == SONNET
+    assert config.for_call(LLMCallType.REFLECTION).model == SONNET
 
 
 def test_replication_fishery_config_sets_n_min_to_starting_population():

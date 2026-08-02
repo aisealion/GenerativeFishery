@@ -26,10 +26,7 @@ class EventType(StrEnum):
     STRATEGY_DECLARED = "strategy_declared"
     DISCLOSURE_MADE = "disclosure_made"
     HARVEST_RESOLVED = "harvest_resolved"
-    CAP_EXCEEDED = "cap_exceeded"
     PENALTY_APPLIED = "penalty_applied"
-    QUOTA_ADJUSTED = "quota_adjusted"
-    REDISTRIBUTION_APPLIED = "redistribution_applied"
     AGENT_STARVED = "agent_starved"
     PERSONAL_NORM_UPDATED = "personal_norm_updated"
     PROPOSAL_MADE = "proposal_made"
@@ -38,12 +35,14 @@ class EventType(StrEnum):
     COUNCILLOR_QUESTION = "councillor_question"
     COUNCILLOR_DISCUSSION_REPLY = "councillor_discussion_reply"
     NORM_ADOPTED = "norm_adopted"
-    NORM_COULD_NOT_COMPILE = "could_not_compile"
+    NORM_IMPLEMENTED = "norm_implemented"
+    NORM_IMPLEMENTATION_FAILED = "norm_implementation_failed"
     ROLE_ELECTION_CALLED = "role_election_called"
     ROLE_ELECTED = "role_elected"
     MONITOR_REVIEW = "monitor_review"
     FISHERY_COLLAPSED = "fishery_collapsed"
     MIGRATION = "migration"
+    FISHERY_INITIALIZED = "fishery_initialized"
 
 
 # The fixed visibility rule per event type. `vote_cast` is deliberately
@@ -54,10 +53,7 @@ VISIBILITY_BY_EVENT_TYPE: dict[EventType, Visibility] = {
     EventType.STRATEGY_DECLARED: Visibility.ACTOR_ONLY,
     EventType.DISCLOSURE_MADE: Visibility.PUBLIC,
     EventType.HARVEST_RESOLVED: Visibility.PUBLIC,
-    EventType.CAP_EXCEEDED: Visibility.PUBLIC,
     EventType.PENALTY_APPLIED: Visibility.PUBLIC,
-    EventType.QUOTA_ADJUSTED: Visibility.PUBLIC,
-    EventType.REDISTRIBUTION_APPLIED: Visibility.PUBLIC,
     EventType.AGENT_STARVED: Visibility.PUBLIC,
     EventType.PERSONAL_NORM_UPDATED: Visibility.ACTOR_ONLY,
     EventType.PROPOSAL_MADE: Visibility.PUBLIC,
@@ -66,12 +62,14 @@ VISIBILITY_BY_EVENT_TYPE: dict[EventType, Visibility] = {
     EventType.COUNCILLOR_QUESTION: Visibility.ACTOR_ONLY,
     EventType.COUNCILLOR_DISCUSSION_REPLY: Visibility.ACTOR_ONLY,
     EventType.NORM_ADOPTED: Visibility.PUBLIC,
-    EventType.NORM_COULD_NOT_COMPILE: Visibility.PUBLIC,
+    EventType.NORM_IMPLEMENTED: Visibility.PUBLIC,
+    EventType.NORM_IMPLEMENTATION_FAILED: Visibility.PUBLIC,
     EventType.ROLE_ELECTION_CALLED: Visibility.PUBLIC,
     EventType.ROLE_ELECTED: Visibility.PUBLIC,
     EventType.MONITOR_REVIEW: Visibility.PUBLIC,
     EventType.FISHERY_COLLAPSED: Visibility.PUBLIC,
     EventType.MIGRATION: Visibility.PUBLIC,
+    EventType.FISHERY_INITIALIZED: Visibility.PUBLIC,
 }
 
 

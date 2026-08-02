@@ -6,19 +6,24 @@ lightweight test embedder so no Anthropic API key or sentence-transformers
 download is needed, and rounds are fast/deterministic.
 """
 
+import asyncio
+import os
 import time
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.websockets import WebSocketDisconnect
 
 from genfishery.api.app import create_app
 from genfishery.config.fishery_config import FisheryConfig
 from genfishery.config.model_config import LLMCallType
+from genfishery.db.session import DEFAULT_DATABASE_URL
+from genfishery.db.tables import events_table
 from genfishery.llm.fake_client import FakeLLMClient
 from genfishery.memory.importance import ImportanceRating
 from genfishery.sim.decisions import ProposalDecision
-from genfishery.sim.norm_compiler import NormCompilerOutput
 from tests.conftest import fake_embedder
 
 
@@ -51,12 +56,32 @@ def make_test_llm() -> FakeLLMClient:
                 community_proposal="Keep fishing moderately.",
             ),
             LLMCallType.VOTE: lambda response_model, system, prompt: response_model(chosen_id="1"),
-            LLMCallType.NORM_COMPILER: NormCompilerOutput(primitives=[]),
         }
     )
 
 
+def _clear_test_live_events() -> None:
+    """Every test in this file reuses the fixed fishery_id "test_live"
+    against the real Postgres container. `FisheryRunner`'s bootstrap now
+    reconstructs `FisheryState` from persisted events on startup (see
+    `sim/state_replay.py`), so leftover rows from an earlier test run would
+    otherwise make a "fresh" test fishery pick up wherever that run left off
+    -- possibly already collapsed -- instead of genuinely starting at round 0.
+    """
+
+    async def _delete() -> None:
+        engine = create_async_engine(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(delete(events_table).where(events_table.c.fishery_id == "test_live"))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_delete())
+
+
 def make_test_app():
+    _clear_test_live_events()
     return create_app(
         llm_client=make_test_llm(),
         fishery_configs=[make_test_config()],
@@ -75,7 +100,6 @@ def test_get_state_returns_snapshot_matching_config():
         assert body["fishery_id"] == "test_live"
         assert body["carrying_capacity"] == 50.0
         assert {a["agent_id"] for a in body["agents"]} == {"a1", "a2", "a3"}
-        assert body["active_norms"] == []  # punishment is opt-in, none active by default
 
 
 def test_get_state_unknown_fishery_id_returns_404():
