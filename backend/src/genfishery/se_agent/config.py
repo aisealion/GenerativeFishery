@@ -27,4 +27,10 @@ def build_default_se_agent_client(model_config: ModelConfig) -> HttpSEAgentClien
     agent = os.environ.get("OPENCODE_AGENT", DEFAULT_OPENCODE_AGENT)
     provider_id = os.environ.get("OPENCODE_PROVIDER_ID", DEFAULT_OPENCODE_PROVIDER_ID)
     model_id = os.environ.get("OPENCODE_MODEL_ID") or model_config.for_call(LLMCallType.PROPOSAL).model
-    return HttpSEAgentClient(base_url, agent=agent, provider_id=provider_id, model_id=model_id, repo_dir=REPO_DIR)
+    kwargs = {}
+    timeout = os.environ.get("OPENCODE_REQUEST_TIMEOUT_SECONDS")
+    if timeout is not None:
+        kwargs["timeout"] = float(timeout)
+    return HttpSEAgentClient(
+        base_url, agent=agent, provider_id=provider_id, model_id=model_id, repo_dir=REPO_DIR, **kwargs
+    )

@@ -81,7 +81,12 @@ class HttpSEAgentClient:
         provider_id: str,
         model_id: str,
         repo_dir: str | Path,
-        timeout: float = 120.0,
+        # A plain chat turn still goes through opencode's own agent loop
+        # (system prompt + tool use) against the same shared, sometimes-slow
+        # Ollama backend genfishery's own calls hit cold-start/load timeouts
+        # on (see openai_compatible_client.py) -- confirmed too tight in
+        # practice at 120s, so the default here is far more generous.
+        timeout: float = 600.0,
     ) -> None:
         self._agent = agent
         self._provider_id = provider_id
