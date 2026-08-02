@@ -21,6 +21,14 @@ on where this process is running, selected via `RESTART_VIA_SLURM_SCRIPT`:
   Postgres has to see the same accumulated event history as this one, not a
   fresh empty database.
 
+  The queued job inherits this job's own wall-time limit (queried live via
+  `squeue`, passed on explicitly as `--time=...`) and its full environment
+  (`--export=ALL`) -- so whatever `--time=...`/`--export=OLLAMA_MODEL_ID=...`
+  you originally submitted with keeps applying to every restart in the
+  chain, not just the first job. (`aoraki_run.slurm` `export`s
+  `OLLAMA_MODEL_ID`/`OLLAMA_CTX_MODEL_ID` specifically so `--export=ALL` has
+  something to actually carry forward.)
+
 Neither branch returns to its caller.
 """
 
@@ -34,14 +42,42 @@ logger = logging.getLogger(__name__)
 RESTART_VIA_SLURM_SCRIPT_ENV = "RESTART_VIA_SLURM_SCRIPT"
 
 
+def _current_job_time_limit(job_id: str) -> str | None:
+    """This job's own `--time` limit, in a format `sbatch --time=` accepts
+    directly (squeue's `%l` reports it as `[D-]HH:MM:SS`, the same syntax
+    `--time` takes) -- or None if squeue can't be reached/parsed, in which
+    case the caller falls back to the queued script's own `#SBATCH --time`
+    default rather than failing the restart over it.
+    """
+    try:
+        result = subprocess.run(
+            ["squeue", "-h", "-j", job_id, "-o", "%l"],
+            capture_output=True, text=True, check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    time_limit = result.stdout.strip()
+    return time_limit or None
+
+
 def perform_restart() -> None:
     script = os.environ.get(RESTART_VIA_SLURM_SCRIPT_ENV)
     if script:
         job_id = os.environ["SLURM_JOB_ID"]
-        logger.info(
-            "restarting via a new Slurm job (afterany:%s) queued from %s", job_id, script
-        )
-        subprocess.run(["sbatch", f"--dependency=afterany:{job_id}", script], check=True)
+        sbatch_args = ["sbatch", f"--dependency=afterany:{job_id}", "--export=ALL"]
+        time_limit = _current_job_time_limit(job_id)
+        if time_limit is not None:
+            sbatch_args.append(f"--time={time_limit}")
+        else:
+            logger.warning(
+                "couldn't determine job %s's own time limit via squeue -- the "
+                "restarted job will fall back to %s's own #SBATCH --time default",
+                job_id,
+                script,
+            )
+        sbatch_args.append(script)
+        logger.info("restarting via a new Slurm job (afterany:%s): %s", job_id, sbatch_args)
+        subprocess.run(sbatch_args, check=True)
         os._exit(0)
 
     logger.info("restarting by re-executing this process in place: %s %s", sys.executable, sys.argv)

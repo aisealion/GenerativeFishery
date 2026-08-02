@@ -10,7 +10,6 @@
 #   - uv python install 3.12   (backend requires Python >=3.12; the Ollama
 #     container itself only ships 3.10, which is why the backend runs
 #     directly on the node below, not nested inside that container)
-#
 # Submit with: sbatch deploy/aoraki_run.slurm
 
 #SBATCH --job-name=genfishery
@@ -55,7 +54,12 @@ if [ -n "${OLLAMA_MODELS:-}" ]; then
   mkdir -p "$OLLAMA_MODELS"
 fi
 
-OLLAMA_MODEL_ID="${OLLAMA_MODEL_ID:-gpt-oss:20b}"
+# `export`ed (not just assigned) so a restart's queued `sbatch` call (see
+# api/restart.py -- it runs from inside the Python backend process, several
+# levels below this script) actually inherits whatever you passed at the
+# original submission via `--export=OLLAMA_MODEL_ID=...`, instead of that
+# choice silently reverting to the hardcoded default on every restart.
+export OLLAMA_MODEL_ID="${OLLAMA_MODEL_ID:-gpt-oss:20b}"
 # Ollama defaults every model to a 4096-token context window unless a custom
 # variant overrides it -- far too small for gpt-oss's reasoning to fit input
 # + chain-of-thought + a final answer, and it fails silently (a response
@@ -64,7 +68,7 @@ OLLAMA_MODEL_ID="${OLLAMA_MODEL_ID:-gpt-oss:20b}"
 # -- so both are pointed at this long-context variant (see models_ollama.yaml
 # and opencode.json), built fresh each job from whatever OLLAMA_MODEL_ID was
 # just pulled.
-OLLAMA_CTX_MODEL_ID="${OLLAMA_CTX_MODEL_ID:-gpt-oss-20b-32k}"
+export OLLAMA_CTX_MODEL_ID="${OLLAMA_CTX_MODEL_ID:-gpt-oss-20b-32k}"
 
 # --- 0. Postgres, via apptainer (no Docker daemon on Aoraki). --
 #     $PGDATA_DIR (home for now, move it to /mnt or /projects once you have

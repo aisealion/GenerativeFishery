@@ -154,6 +154,17 @@ tail -f postgres-<jobid>.log      # Postgres's own startup log
 get the full per-fishery prompt/response and SE-agent discussion/implementation
 transcripts, same as any local run.
 
+**These two keep accumulating across restarts** (see "Restarts" below) --
+`LoggingLLMClient`/`LoggingSEAgentClient` open them in append mode, and the
+path is just `{fishery_id}.log`/`{fishery_id}_se_agent.log`, with no job-id
+in it, so a restarted job appends to the exact same files rather than
+starting new ones. `slurm-<jobid>.out`, `ollama-<jobid>.log`, and
+`postgres-<jobid>.log`, by contrast, are named after `$SLURM_JOB_ID` --
+**those do not carry over**; each restart's job gets its own fresh set, so
+reconstructing the full startup history across a chain of restarts means
+looking at each job's own `slurm-<jobid>.out` in turn (`squeue --me` /
+`sacct` to find the job IDs in the chain).
+
 ## Restarts
 
 Whenever a round's winning norm gets successfully implemented as a real code
@@ -169,6 +180,15 @@ one. `--dependency=afterany` is a cheap safety net -- Slurm won't start the
 new job until this one has actually ended, so there's no window where two
 jobs touch the same fishery's event log concurrently. This process then
 exits; watch `squeue --me` to see the new job appear.
+
+The queued job also inherits **this job's own `--time` limit** (queried live
+via `squeue`) and **your full environment** (`--export=ALL`) -- so if you
+originally submitted with `sbatch --time=08:00:00
+--export=OLLAMA_MODEL_ID=gpt-oss:20b deploy/aoraki_run.slurm`, every restart
+in the chain keeps that same 8-hour budget and model choice, not just the
+first job. (`aoraki_run.slurm` `export`s `OLLAMA_MODEL_ID`/
+`OLLAMA_CTX_MODEL_ID` specifically so there's something for `--export=ALL`
+to actually carry forward -- see `api/restart.py`'s module docstring.)
 
 This only works because `$PGDATA_DIR` is a stable, non-job-id-suffixed path
 (see "Postgres" below) -- the new job's Postgres has to see the exact same
