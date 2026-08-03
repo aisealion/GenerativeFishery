@@ -82,18 +82,40 @@ async def run_harvest_phase(state: FisheryState, events: EventSink) -> None:
         for agent in state.alive_agents
     }
 
+    # Apply per-person quota and communal pot
+    quota = 1.10
+    harvested_amounts = {}
+    surplus_sum = 0.0
     for agent in state.alive_agents:
-        agent.last_harvest = harvests[agent.agent_id]
-
-    total_harvest = sum(harvests.values())
+        raw = harvests[agent.agent_id]
+        if raw > quota:
+            surplus = raw - quota
+            harvested = quota
+            surplus_sum += surplus
+        else:
+            surplus = 0.0
+            harvested = raw
+        harvested_amounts[agent.agent_id] = harvested
+        agent.last_harvest = harvested
+    # Update communal pot with accumulated surplus
+    state.communal_pot += surplus_sum
+    # Calculate total harvested after quota
+    total_harvest = sum(harvested_amounts.values())
     post_harvest_stock = max(0.0, state.stock - total_harvest)
-    regrown_stock = post_harvest_stock + cfg.r * post_harvest_stock * (
-        1 - post_harvest_stock / cfg.k
-    )
-
+    regrown_stock = post_harvest_stock + cfg.r * post_harvest_stock * (1 - post_harvest_stock / cfg.k)
     for agent in state.alive_agents:
-        agent.payoff += harvests[agent.agent_id] - cfg.consumption
+        agent.payoff += harvested_amounts[agent.agent_id] - cfg.consumption
         agent.payoff_after_harvest = agent.payoff
+    # Redistribution if harvest falls short
+    collective_threshold = quota * len(state.alive_agents)
+    if total_harvest < collective_threshold:
+        deficit_per_agent = {aid: max(0.0, 1.00 - harvested_amounts[aid]) for aid in harvested_amounts}
+        deficit_total = sum(deficit_per_agent.values())
+        if state.communal_pot >= deficit_total:
+            state.communal_pot -= deficit_total
+            for aid, deficit in deficit_per_agent.items():
+                if deficit > 0.0:
+                    state.agents[aid].payoff += deficit
 
     await events.record(
         Event.create(
@@ -103,7 +125,7 @@ async def run_harvest_phase(state: FisheryState, events: EventSink) -> None:
             type=EventType.HARVEST_RESOLVED,
             payload={
                 "pre_harvest_stock": state.stock,
-                "harvests": harvests,
+                "harvests": harvested_amounts,
                 "post_harvest_stock": post_harvest_stock,
                 "regrown_stock": regrown_stock,
             },

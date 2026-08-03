@@ -46,6 +46,7 @@ class FisheryState:
     # other causes remain "trigger, not necessarily terminal" per build spec
     # §7 point 6.
     collapse_reasons: list[str] = field(default_factory=list)
+communal_pot: float = 0.0  # communal pot for surplus fish
     # Natural-language text of the community's currently-adopted norm (build
     # spec §4/§5). There's no separate compiled/mechanically-enforced form of
     # it anymore -- how it's actually enforced is whatever code the SE agent
