@@ -29,6 +29,14 @@ on where this process is running, selected via `RESTART_VIA_SLURM_SCRIPT`:
   `OLLAMA_MODEL_ID`/`OLLAMA_CTX_MODEL_ID` specifically so `--export=ALL` has
   something to actually carry forward.)
 
+  Slurm sets the new job's `$SLURM_SUBMIT_DIR` from whatever directory
+  `sbatch` was itself run *from* -- not from this job's own
+  `$SLURM_SUBMIT_DIR`. This Python process's own cwd is `backend/` (the
+  script `cd`s there before starting uvicorn), so `sbatch` is run with an
+  explicit `cwd=REPO_DIR` below -- otherwise the new job's `$SLURM_SUBMIT_DIR`
+  would silently become `.../backend` instead of the repo root, and its own
+  `cd backend` would then fail outright (confirmed in practice).
+
 Neither branch returns to its caller.
 """
 
@@ -36,10 +44,15 @@ import logging
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 RESTART_VIA_SLURM_SCRIPT_ENV = "RESTART_VIA_SLURM_SCRIPT"
+
+# The repo root, not `backend/` -- see the module docstring on why `sbatch`
+# below is run with this as its cwd.
+REPO_DIR = Path(__file__).resolve().parents[4]
 
 
 def _current_job_time_limit(job_id: str) -> str | None:
@@ -76,8 +89,10 @@ def perform_restart() -> None:
                 script,
             )
         sbatch_args.append(script)
-        logger.info("restarting via a new Slurm job (afterany:%s): %s", job_id, sbatch_args)
-        subprocess.run(sbatch_args, check=True)
+        logger.info(
+            "restarting via a new Slurm job (afterany:%s), cwd=%s: %s", job_id, REPO_DIR, sbatch_args
+        )
+        subprocess.run(sbatch_args, cwd=REPO_DIR, check=True)
         os._exit(0)
 
     logger.info("restarting by re-executing this process in place: %s %s", sys.executable, sys.argv)
