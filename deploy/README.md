@@ -100,17 +100,21 @@ allocated path) in `aoraki_run.slurm`, then re-pull the model there — moving
 it out of home also frees that quota space back up.
 
 Clone/copy this repo somewhere on Aoraki, and make sure `opencode.json` and
-`.opencode/agent/fishery-se-agent.md` are present at the repo root — that's
+both `.opencode/agent/fishery-discussion-agent.md` and
+`.opencode/agent/fishery-code-agent.md` are present at the repo root — that's
 where `opencode serve` looks for them when started from the repo's `$PWD`
 (the Slurm script `cd`s to `$SLURM_SUBMIT_DIR` first, so submit the job from
-the repo root).
+the repo root). These are two separate agents/personas, not one dual-mode
+agent: the discussion one has no edit/bash permission at all in its own
+frontmatter, so "never touch code during discussion" is enforced by opencode
+itself, not just a prompt instruction.
 
-### Understand-Anything (optional, for the SE agent's implementation step)
+### Understand-Anything (optional, for the code agent's implementation step)
 
 [Understand-Anything](https://github.com/Lum1104/Understand-Anything) turns
 a codebase into an interactive knowledge graph an agent can query — useful
-for the SE agent's implementation step (see
-`.opencode/agent/fishery-se-agent.md`), since it has to actually navigate
+for the code agent's implementation step (see
+`.opencode/agent/fishery-code-agent.md`), since it has to actually navigate
 `backend/` before editing it. Documented one-line installer, OpenCode among
 its supported platforms:
 

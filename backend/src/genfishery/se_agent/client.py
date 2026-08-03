@@ -1,17 +1,24 @@
-"""The fishery SE agent: a real `opencode` (opencode.ai) agent, reached over
-its HTTP server API (`opencode serve`), with two jobs -- discussing how to
-operationalize a just-proposed norm with one fishing agent at a time
-(`ask`), and, for whichever proposal wins the community's vote, implementing
-it as an actual code change under `backend/`, committed with git
-(`implement_norm`).
+"""The fishery SE agent side: two separate real `opencode` (opencode.ai)
+agents, reached over one HTTP server (`opencode serve`), each with its own
+job and its own `.opencode/agent/*.md` persona/permissions --
+`discussion_agent` discusses how to operationalize a just-proposed norm with
+one fishing agent at a time (`ask`), never touches code, and has no
+edit/bash permission at the opencode config level to enforce that; whichever
+proposal wins the community's vote gets handed to `code_agent` instead, to
+implement it as an actual code change under `backend/`, committed with git
+(`implement_norm`). Splitting these into two agents (rather than one
+dual-mode persona switching on message content) means "discussion never
+touches code" is an opencode-enforced permission boundary, not just a prompt
+instruction the model could ignore.
 
-One session per discussion (`start_session` once, then `ask`/`implement_norm`
-repeatedly within it) -- not a fresh `opencode run` subprocess per turn --
-because two fisheries can run concurrently in this codebase (independent
-asyncio tasks, see `api/runner.py`'s module docstring) and the CLI's
-`--continue` only resumes "the last session" server-wide, which would race
-across fisheries. An explicit session id per discussion has no such
-ambiguity.
+One session per discussion (`start_session` once, then `ask` repeatedly
+within it) -- not a fresh `opencode run` subprocess per turn -- because two
+fisheries can run concurrently in this codebase (independent asyncio tasks,
+see `api/runner.py`'s module docstring) and the CLI's `--continue` only
+resumes "the last session" server-wide, which would race across fisheries.
+An explicit session id per discussion has no such ambiguity.
+`implement_norm` always starts its own fresh session, separate from any
+proposer's discussion session and always run through `code_agent`.
 
 Response field names (`TextPart.text`, `{info, parts}`) are taken from
 opencode's own SDK type definitions, not exercised against a live server yet
@@ -77,7 +84,8 @@ class HttpSEAgentClient:
         self,
         base_url: str,
         *,
-        agent: str,
+        discussion_agent: str,
+        code_agent: str,
         provider_id: str,
         model_id: str,
         repo_dir: str | Path,
@@ -88,7 +96,13 @@ class HttpSEAgentClient:
         # practice at 120s, so the default here is far more generous.
         timeout: float = 600.0,
     ) -> None:
-        self._agent = agent
+        # Two separate opencode agents (see .opencode/agent/), not one
+        # dual-mode persona: `discussion_agent` has no edit/bash permission at
+        # all, so "never touch code during discussion" is enforced by
+        # opencode itself, not just a prompt instruction the model could
+        # ignore. `code_agent` is the only one ever used for `implement_norm`.
+        self._discussion_agent = discussion_agent
+        self._code_agent = code_agent
         self._provider_id = provider_id
         self._model_id = model_id
         self._repo_dir = Path(repo_dir)
@@ -107,7 +121,7 @@ class HttpSEAgentClient:
         response = await self._http.post(
             f"/session/{session_id}/message",
             json={
-                "agent": self._agent,
+                "agent": self._discussion_agent,
                 "model": {"providerID": self._provider_id, "modelID": self._model_id},
                 "parts": [{"type": "text", "text": message}],
             },
@@ -120,7 +134,7 @@ class HttpSEAgentClient:
         response = await self._http.post(
             f"/session/{session_id}/message",
             json={
-                "agent": self._agent,
+                "agent": self._code_agent,
                 "model": {"providerID": self._provider_id, "modelID": self._model_id},
                 "parts": [{"type": "text", "text": instructions}],
             },

@@ -13,7 +13,12 @@ from genfishery.config.model_config import LLMCallType, ModelConfig
 from genfishery.se_agent.client import HttpSEAgentClient
 
 DEFAULT_OPENCODE_SERVER_URL = "http://127.0.0.1:4096"
-DEFAULT_OPENCODE_AGENT = "fishery-se-agent"
+# Two separate opencode agents/personas (see .opencode/agent/) -- the
+# discussion one has no edit/bash permission at all, so "never touch code
+# during discussion" is an opencode-enforced boundary, not just a prompt
+# instruction the model could ignore.
+DEFAULT_OPENCODE_DISCUSSION_AGENT = "fishery-discussion-agent"
+DEFAULT_OPENCODE_CODE_AGENT = "fishery-code-agent"
 DEFAULT_OPENCODE_PROVIDER_ID = "ollama"
 
 # The repo root (not just `backend/`) -- `implement_norm` verifies success by
@@ -24,7 +29,8 @@ REPO_DIR = Path(__file__).resolve().parents[4]
 
 def build_default_se_agent_client(model_config: ModelConfig) -> HttpSEAgentClient:
     base_url = os.environ.get("OPENCODE_SERVER_URL", DEFAULT_OPENCODE_SERVER_URL)
-    agent = os.environ.get("OPENCODE_AGENT", DEFAULT_OPENCODE_AGENT)
+    discussion_agent = os.environ.get("OPENCODE_DISCUSSION_AGENT", DEFAULT_OPENCODE_DISCUSSION_AGENT)
+    code_agent = os.environ.get("OPENCODE_CODE_AGENT", DEFAULT_OPENCODE_CODE_AGENT)
     provider_id = os.environ.get("OPENCODE_PROVIDER_ID", DEFAULT_OPENCODE_PROVIDER_ID)
     model_id = os.environ.get("OPENCODE_MODEL_ID") or model_config.for_call(LLMCallType.PROPOSAL).model
     kwargs = {}
@@ -32,5 +38,11 @@ def build_default_se_agent_client(model_config: ModelConfig) -> HttpSEAgentClien
     if timeout is not None:
         kwargs["timeout"] = float(timeout)
     return HttpSEAgentClient(
-        base_url, agent=agent, provider_id=provider_id, model_id=model_id, repo_dir=REPO_DIR, **kwargs
+        base_url,
+        discussion_agent=discussion_agent,
+        code_agent=code_agent,
+        provider_id=provider_id,
+        model_id=model_id,
+        repo_dir=REPO_DIR,
+        **kwargs,
     )
