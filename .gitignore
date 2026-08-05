@@ -10,3 +10,7 @@ dist/
 build/
 .DS_Store
 logs/
+# .ua/ (Understand-Anything's knowledge-graph cache) is deliberately NOT
+# ignored -- see .opencode/agent/fishery-code-agent.md: it's committed
+# alongside every code change so it stays in lockstep with the commit it
+# describes, and swaps correctly with `git checkout` across branches.

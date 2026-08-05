@@ -124,13 +124,29 @@ curl -fsSL https://raw.githubusercontent.com/Egonex-AI/Understand-Anything/main/
 
 This clones the tool and wires up OpenCode's plugin discovery for it;
 restart `opencode serve` afterwards. Once installed, `/understand` (run once,
-from the repo root) builds the graph into `.ua/knowledge-graph.json`;
-`/understand-chat`/`/understand-diff` query and update it afterward.
+from the repo root) builds the graph into `.ua/knowledge-graph.json`.
 **Unverified as of this writing** — like every other opencode integration
 point in this deploy setup, confirm it actually works by running the
 installer and `/understand` once yourself before relying on it. It's
-entirely optional: the SE agent works without it, just by reading files
+entirely optional: the code agent works without it, just by reading files
 directly.
+
+This install step is deliberately *not* baked into `aoraki_run.slurm` (unlike
+the branch-scoped `PGDATA_DIR` fix above) — it stays a manual, one-time,
+per-account setup step, same as installing `opencode`/`uv` themselves.
+
+**`.ua/` is committed to the repo**, alongside the code it describes, every
+round (see `.opencode/agent/fishery-code-agent.md`'s Process section) —
+matching Understand-Anything's own recommended usage (its docs say to commit
+`.ua/` so it doesn't need rebuilding from scratch by everyone who checks the
+repo out). The code agent refreshes it (`/understand-diff`, falling back to
+a full `/understand` rebuild) right before each commit, then
+`git add backend/ .ua/` together, so the graph and the code it maps always
+land in the same commit. That also solves staleness without needing any
+`PGDATA_DIR`-style branch scoping: since it's a normal tracked file now,
+`git checkout` swaps it in and out along with everything else whenever you
+switch branches or commits — there's no separate cache to go stale, only
+whatever's actually sitting in the working tree for the commit you're on.
 
 ## Submitting a run
 
