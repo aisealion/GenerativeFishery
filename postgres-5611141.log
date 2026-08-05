@@ -1,0 +1,17 @@
+2026-08-05 08:22:09.700 NZST [161193] LOG:  starting PostgreSQL 16.4 on x86_64-pc-linux-musl, compiled by gcc (Alpine 13.2.1_git20240309) 13.2.1 20240309, 64-bit
+2026-08-05 08:22:09.700 NZST [161193] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-08-05 08:22:09.704 NZST [161193] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2026-08-05 08:22:09.784 NZST [161226] LOG:  database system was interrupted; last known up at 2026-08-04 02:58:08 NZST
+2026-08-05 08:22:10.930 NZST [161228] LOG:  incomplete startup packet
+2026-08-05 08:22:10.931 NZST [161230] LOG:  incomplete startup packet
+2026-08-05 08:22:11.070 NZST [161287] FATAL:  the database system is starting up
+2026-08-05 08:22:11.071 NZST [161288] FATAL:  the database system is starting up
+2026-08-05 08:22:12.822 NZST [161226] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-08-05 08:22:12.849 NZST [161226] LOG:  redo starts at 0/1C497B0
+2026-08-05 08:22:12.850 NZST [161226] LOG:  invalid record length at 0/1C49898: expected at least 24, got 0
+2026-08-05 08:22:12.850 NZST [161226] LOG:  redo done at 0/1C49860 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-08-05 08:22:12.859 NZST [161224] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-08-05 08:22:12.879 NZST [161224] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.002 s, total=0.022 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1C49898, redo lsn=0/1C49898
+2026-08-05 08:22:12.885 NZST [161193] LOG:  database system is ready to accept connections
+2026-08-05 08:22:12.889 NZST [161428] LOG:  TimescaleDB background worker launcher connected to shared catalogs
+2026-08-05 08:22:41.511 NZST [161193] LOG:  received smart shutdown request

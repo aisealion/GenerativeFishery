@@ -1,0 +1,19 @@
+NOTICE: Starting Ollama server in the background.
+NOTICE: Waiting for the server to come online (1/10)
+[?2026h[?25l[1Gpulling manifest ⠋ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠙ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠹ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠸ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠼ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠴ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠦ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠧ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠇ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠏ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠋ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠙ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠹ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠸ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠼ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠴ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest [K
+pulling e7b273f96360: 100% ▕██████████████████▏  13 GB                         [K
+pulling fa6710a93d78: 100% ▕██████████████████▏ 7.2 KB                         [K
+pulling f60356777647: 100% ▕██████████████████▏  11 KB                         [K
+pulling d8ba2f9a17b3: 100% ▕██████████████████▏   18 B                         [K
+pulling 776beb3adb23: 100% ▕██████████████████▏  489 B                         [K
+verifying sha256 digest [K
+writing manifest [K
+success [K[?25h[?2026l
+[?2026h[?25l[1Ggathering model components [K[?25h[?2026l[?2026h[?25l[1Ggathering model components [K
+using existing layer sha256:e7b273f9636059a689e3ddcab3716e4f65abe0143ac978e46673ad0e52d09efb [K
+using existing layer sha256:fa6710a93d78da62641e192361344be7a8c0a1c3737f139cf89f20ce1626b99c [K
+using existing layer sha256:f60356777647e927149cbd4c0ec1314a90caba9400ad205ddc4ce47ed001c2d6 [K
+using existing layer sha256:57c429fc56ee2d6aecc0d15f0b7dcc7b699c3015a49a605ef2cbe6fc53dda6f6 [K
+writing manifest [K
+success [K[?25h[?2026l
+GENFISHERY_OPENAI_URL_BASE=http://127.0.0.1:11444/v1
