@@ -72,14 +72,31 @@ export OLLAMA_CTX_MODEL_ID="${OLLAMA_CTX_MODEL_ID:-gpt-oss-20b-32k}"
 
 # --- 0. Postgres, via apptainer (no Docker daemon on Aoraki). --
 #     $PGDATA_DIR (home for now, move it to /mnt or /projects once you have
-#     access, same as OLLAMA_MODELS) is a STABLE path -- deliberately not
-#     suffixed with $SLURM_JOB_ID -- because a process restart (see
-#     `sim/engine.py`'s module docstring, and `RESTART_VIA_SLURM_SCRIPT`
-#     below) queues a brand-new Slurm job rather than re-execing within this
-#     one, and that new job's Postgres has to see the exact same accumulated
-#     event history as this job's, not a fresh empty database. initdb/createdb
-#     below are therefore guarded to be safe to re-run against a directory/
-#     database an earlier job already created.
+#     access, same as OLLAMA_MODELS) defaults to one path PER GIT BRANCH --
+#     not one single global path, and not suffixed with $SLURM_JOB_ID either.
+#     Both matter for a different reason:
+#       - Stable *within* a run (same branch): a restart (see
+#         `sim/engine.py`'s module docstring, and `RESTART_VIA_SLURM_SCRIPT`
+#         below) queues a brand-new Slurm job from this same checkout/branch
+#         rather than re-execing within this one, and that new job's Postgres
+#         has to see the exact same accumulated event history as this job's,
+#         not a fresh empty database -- so it must NOT be job-id-suffixed.
+#       - Fresh *across* runs (a new branch): confirmed in practice -- a
+#         single global path meant a fresh branch's fishery silently picked
+#         up round/state history left behind by whatever ran on the branch
+#         before it, since `FisheryRunner`'s bootstrap replays purely from
+#         `fishery_id` in Postgres with no idea what git branch produced that
+#         history. Branch name is exactly the unit this workflow's "run" is
+#         already scoped to (checkout a new branch, submit, let it go), so it
+#         doubles as a natural, zero-effort per-run key -- restarts naturally
+#         resolve to the same directory (same checkout, same branch, so the
+#         same `git rev-parse` answer each time), while a new branch just as
+#         naturally gets a directory nothing has ever written to.
+#     Override `PGDATA_DIR` explicitly (e.g. to deliberately share history
+#     across two branches, or once /mnt or /projects access exists) to skip
+#     this default entirely. initdb/createdb below are still guarded to be
+#     safe to re-run against a directory/database an earlier job already
+#     created, either way.
 #
 # CONFIRMED (interactively, on this account): `apptainer run --fakeroot`
 # fails outright here (not in /etc/subuid, and the container's own fakeroot
@@ -96,8 +113,11 @@ PG_SIF="${PG_SIF:-$HOME/timescaledb.sif}"
 if [ ! -f "$PG_SIF" ]; then
   apptainer pull "$PG_SIF" docker://timescale/timescaledb:2.17.1-pg16
 fi
-PGDATA_DIR="${PGDATA_DIR:-$HOME/genfishery_pgdata}"
+GIT_BRANCH="$(git -C "$SLURM_SUBMIT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+GIT_BRANCH_SAFE="${GIT_BRANCH//\//-}"   # branch names can contain "/"; keep this one path component
+export PGDATA_DIR="${PGDATA_DIR:-$HOME/genfishery_pgdata_${GIT_BRANCH_SAFE}}"
 mkdir -p "$PGDATA_DIR"
+echo "Using PGDATA_DIR=$PGDATA_DIR (branch: $GIT_BRANCH)"
 
 # initdb only if this is genuinely the first job to ever use this directory --
 # PG_VERSION is the file Postgres itself uses to mark a data directory as

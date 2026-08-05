@@ -194,11 +194,12 @@ first job. (`aoraki_run.slurm` `export`s `OLLAMA_MODEL_ID`/
 `OLLAMA_CTX_MODEL_ID` specifically so there's something for `--export=ALL`
 to actually carry forward -- see `api/restart.py`'s module docstring.)
 
-This only works because `$PGDATA_DIR` is a stable, non-job-id-suffixed path
-(see "Postgres" below) -- the new job's Postgres has to see the exact same
-accumulated event log as this job's for the restart to actually resume
-rather than start over. State itself (round number, stock, agent payoffs,
-etc.) is reconstructed from that event log on the way back up (see
+This only works because `$PGDATA_DIR` is a stable path *for this run* (see
+"Postgres" below -- it defaults to one path per git branch, not job-id-
+suffixed) -- the new job's Postgres has to see the exact same accumulated
+event log as this job's for the restart to actually resume rather than
+start over. State itself (round number, stock, agent payoffs, etc.) is
+reconstructed from that event log on the way back up (see
 `sim/state_replay.py`), not stored separately.
 
 ## Reaching the running API
@@ -246,19 +247,28 @@ rest of that SSH session.
 - **`--gres=gpu:1`** grabs any free GPU; swap in `aoraki_gpu_L40` /
   `aoraki_gpu_A100_80GB` / etc. as the `--partition` if you need a specific
   card's memory instead.
-- **Postgres persists across jobs, on purpose** — it runs via `apptainer
-  exec` driving `initdb`/`postgres` directly (confirmed working this way;
-  `--fakeroot` does not work on this account), against the same
-  `timescale/timescaledb:2.17.1-pg16` image `docker-compose.yml` uses
-  locally. `$PGDATA_DIR` (default `$HOME/genfishery_pgdata`, no job-id
-  suffix) is a *stable* path, deliberately shared across every job/restart —
-  see "Restarts" above for why: a restart queues a brand-new Slurm job, and
-  that job's Postgres has to see this job's exact same accumulated event
-  log, not an empty database. `initdb` only runs if `$PGDATA_DIR/PG_VERSION`
+- **Postgres persists across jobs of the same run, but not across runs** —
+  it runs via `apptainer exec` driving `initdb`/`postgres` directly
+  (confirmed working this way; `--fakeroot` does not work on this account),
+  against the same `timescale/timescaledb:2.17.1-pg16` image
+  `docker-compose.yml` uses locally. `$PGDATA_DIR` defaults to
+  `$HOME/genfishery_pgdata_<branch>` — **one path per git branch**, not one
+  global path and not job-id-suffixed. That's deliberate on both counts: a
+  restart (queued from the same checkout/branch) needs this job's exact
+  same accumulated event log, not an empty database, so it can't be
+  job-id-suffixed — but a genuinely new run (a fresh branch, per this
+  project's own workflow of branching before each run) needs a database
+  nothing has written to yet, confirmed necessary in practice: a single
+  global path meant a new branch's fishery silently inherited round/state
+  history left behind by whatever ran on a previous branch, since
+  `FisheryRunner`'s bootstrap only knows `fishery_id`, never which branch
+  produced a given event. `initdb` only runs if `$PGDATA_DIR/PG_VERSION`
   doesn't already exist, and `createdb` is allowed to fail (`|| true`) for
   the same reason — both are safe to re-run against a directory an earlier
-  job already set up. Once `/mnt`/`/projects` access comes through, point
-  `PGDATA_DIR` there instead, for the same reason as `OLLAMA_MODELS` above.
+  job (of the same run) already set up. Override `PGDATA_DIR` explicitly to
+  skip this default — e.g. to deliberately share history across two
+  branches, or once `/mnt`/`/projects` access comes through, for the same
+  reason as `OLLAMA_MODELS` above.
   If you genuinely want a fresh start, delete `$PGDATA_DIR` by hand first.
 - **Ollama's context window (confirmed as a real failure, not theoretical)**
   — Ollama defaults every model to a 4096-token context window unless a
